@@ -8,6 +8,7 @@ server on craftingtable.
 ## Layout
 
 - `server/`: FastAPI + SQLite (SQLModel). Python 3.12+, managed with `uv`.
+- `web/`: the website: React + TypeScript (Vite, Tailwind, TanStack Query, dnd-kit).
 - `data/`: the local database and raw imports (gitignored).
 
 ## Run locally
@@ -20,9 +21,20 @@ uv run python scripts/fetch_cookwell.py    # download cookwell.com recipes (resu
 uv run python scripts/load_usda.py         # load ~8k foods with nutrients per 100 g
 uv run python scripts/import_cookwell.py   # load recipes (skips ones already there)
 uv run uvicorn app.main:app --reload --port 8765
+
+cd ../web
+npm install
+npm run dev        # http://localhost:5173 (proxies /api to :8765)
 ```
 
-API docs: http://localhost:8765/docs
+API docs: http://localhost:8765/docs. After `npm run build`, the API server also
+serves the website at http://localhost:8765.
+
+## Deploy (craftingtable)
+
+`docker compose up -d --build` builds the website and server into one image,
+listening on port 8130. The database lives in `./data/cauldron.db` next to the
+compose file, so a backup is a copy of that file.
 
 ## Nutrition
 
@@ -38,7 +50,7 @@ hand edits are never overwritten.
 
 1. ✅ Backend, database, Cook Well recipe import
 2. ✅ Nutrition: USDA FoodData Central per ingredient → dish → serving
-3. Website: library, planner (drag-and-drop), grocery list
+3. ✅ Website: library, planner (drag-and-drop), grocery list
 4. Batch cooking: portions left, calories per portion
 5. Import from YouTube / Reels / Shorts (yt-dlp + transcript + LLM)
 6. Android app (+ share-sheet import)

@@ -1,0 +1,12 @@
+services:
+  cauldron:
+    build: .
+    container_name: cauldron
+    restart: unless-stopped
+    ports:
+      - "8130:8000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - path: .env
+        required: false

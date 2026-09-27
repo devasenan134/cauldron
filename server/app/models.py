@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import JSON
 from sqlmodel import Field, SQLModel
@@ -83,3 +83,27 @@ class Food(SQLModel, table=True):
     sodium_mg: float | None = None
     # USDA household measures: [{"unit": "clove", "grams": 3.0}, ...] (per 1 unit)
     portions: list[dict] = Field(default_factory=list, sa_type=JSON)
+
+
+class PlanEntry(SQLModel, table=True):
+    """A meal on the planner. day=None means it waits in the queue."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    day: date | None = Field(default=None, index=True)
+    position: int = 0  # order within the day (or the queue)
+    recipe_id: int | None = Field(default=None, foreign_key="recipe.id", ondelete="CASCADE")
+    title: str = ""  # for a custom meal or note with no recipe
+    servings: float = 1  # portions planned (eaten, or cooked for a batch)
+    created_at: datetime = Field(default_factory=now)
+
+
+class GroceryItem(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    name: str
+    amount: str = ""  # e.g. "5 cloves + 20 g"
+    aisle: str = "Other"
+    checked: bool = False
+    manual: bool = False  # added by hand; kept when the list is regenerated
+    sources: list[str] = Field(default_factory=list, sa_type=JSON)  # recipe titles
+    created_at: datetime = Field(default_factory=now)
