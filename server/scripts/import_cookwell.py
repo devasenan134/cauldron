@@ -1,4 +1,9 @@
-"""Load data/raw/cookwell/*.json into the database. Re-running updates in place."""
+"""Load data/raw/cookwell/*.json into the database.
+
+Recipes already in the database are skipped, so your edits survive a re-run.
+--refresh re-imports them from the raw files, replacing their ingredients and
+steps (and any hand edits to them).
+"""
 import json
 import re
 import sys
@@ -8,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlmodel import Session, delete, select  # noqa: E402
 
 from app.db import engine, init_db  # noqa: E402
+from app.foodlink import link_all  # noqa: E402
 from app.models import Ingredient, Recipe, Step, User  # noqa: E402
 from app.users import owner  # noqa: E402
 
@@ -85,7 +91,7 @@ def load(session: Session, user: User, raw: dict) -> Recipe:
             group=(ing.get("component") or {}).get("title"),
             name=ing["title"].strip(), note=ing.get("note") or "",
             amount=q.get("amount"), unit=q.get("unit"), label=q.get("label") or "",
-            grams=to_grams(q), aisle=ing.get("groceryAisle"),
+            grams=(g := to_grams(q)), grams_source="given" if g is not None else None, aisle=ing.get("groceryAisle"),
         ))
     for i, step in enumerate(raw.get("steps") or []):
         session.add(Step(recipe_id=recipe.id, position=i, title=step.get("title") or "",
@@ -98,12 +104,21 @@ def main() -> None:
     files = sorted(RAW.glob("*.json"))
     with Session(engine) as session:
         user = owner(session)
+        refresh = "--refresh" in sys.argv
+        have = set(session.exec(select(Recipe.source_url).where(Recipe.source == "cookwell")))
+        new = 0
         for f in files:
-            load(session, user, json.loads(f.read_text()))
+            raw = json.loads(f.read_text())
+            if refresh or f"https://www.cookwell.com/recipe/{raw['slug']}" not in have:
+                load(session, user, raw)
+                new += 1
+        session.flush()
+        link_all(session)
         session.commit()
         n_ing = len(session.exec(select(Ingredient)).all())
         n_g = len(session.exec(select(Ingredient).where(Ingredient.grams.is_not(None))).all())
-    print(f"imported {len(files)} recipes, {n_ing} ingredients ({n_g} with a gram weight)")
+        n_f = len(session.exec(select(Ingredient).where(Ingredient.food_id.is_not(None))).all())
+    print(f"imported {new} of {len(files)} recipes; database has {n_ing} ingredients ({n_f} linked to a food, {n_g} with grams)")
 
 
 if __name__ == "__main__":

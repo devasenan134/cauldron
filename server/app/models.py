@@ -52,7 +52,10 @@ class Ingredient(SQLModel, table=True):
     amount: float | None = None
     unit: str | None = None
     label: str = ""  # quantity as written, e.g. "4-6 cloves"
-    grams: float | None = None  # resolved weight, drives nutrition
+    grams: float | None = None  # weight used for nutrition
+    # how grams was found: given | portion | parts | estimate | manual; None = not counted
+    grams_source: str | None = None
+    food_id: int | None = Field(default=None, foreign_key="food.id")
     aisle: str | None = None
 
 
@@ -62,3 +65,21 @@ class Step(SQLModel, table=True):
     position: int
     title: str = ""
     text: str
+
+
+class Food(SQLModel, table=True):
+    """A food with nutrients per 100 g: USDA (FoodData Central) or user-made."""
+    id: int | None = Field(default=None, primary_key=True)
+    fdc_id: int | None = Field(default=None, unique=True)
+    name: str = Field(index=True)
+    source: str  # usda_foundation | usda_sr_legacy | custom
+    category: str | None = None
+    kcal: float = 0
+    protein: float = 0
+    fat: float = 0
+    carbs: float = 0
+    fiber: float | None = None
+    sugar: float | None = None
+    sodium_mg: float | None = None
+    # USDA household measures: [{"unit": "clove", "grams": 3.0}, ...] (per 1 unit)
+    portions: list[dict] = Field(default_factory=list, sa_type=JSON)
