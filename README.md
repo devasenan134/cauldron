@@ -9,6 +9,7 @@ server on craftingtable.
 
 - `server/`: FastAPI + SQLite (SQLModel). Python 3.12+, managed with `uv`.
 - `web/`: the website: React + TypeScript (Vite, Tailwind, TanStack Query, dnd-kit).
+- `android/`: the Android app: Kotlin + Jetpack Compose (package `io.github.devasenan134.cauldron`).
 - `data/`: the local database and raw imports (gitignored).
 
 ## Run locally
@@ -36,6 +37,28 @@ serves the website at http://localhost:8765.
 listening on port 8130. The database lives in `./data/cauldron.db` next to the
 compose file, so a backup is a copy of that file.
 
+## Android app
+
+```sh
+cd android
+./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk
+```
+
+Builds are signed with the Cauldron key (`CAULDRON_KEYSTORE`, `CAULDRON_KEYSTORE_PASSWORD`,
+`CAULDRON_KEY_ALIAS` in `~/.gradle/gradle.properties`), debug builds too: Google sign-in
+only answers apps whose signing-key SHA-1 is registered as an Android OAuth client in the
+same Google Cloud project as the website's client. The app sends its session as
+`Authorization: Bearer`; the website uses a cookie.
+
+Testing against a local server on the emulator, without Google:
+
+```sh
+./gradlew assembleDebug -PapiUrl=http://10.0.2.2:8765 -PdevToken=<a session token>
+```
+
+The grocery list works offline: changes apply at once and sync in order when the
+server is reachable again.
+
 ## Nutrition
 
 Each ingredient links to a food (`app/foodmap.py`, hand-checked for every
@@ -51,9 +74,9 @@ hand edits are never overwritten.
 1. ✅ Backend, database, Cook Well recipe import
 2. ✅ Nutrition: USDA FoodData Central per ingredient → dish → serving
 3. ✅ Website: library, planner (drag-and-drop), grocery list
-4. Batch cooking: portions left, calories per portion
+4. ✅ Batch cooking: portions left, calories per portion
 5. Import from YouTube / Reels / Shorts (yt-dlp + transcript + LLM)
-6. Android app (+ share-sheet import)
+6. ✅ Android app (share-sheet import comes with step 5)
 7. ✅ Google sign-in and friends
 
 ## License

@@ -19,7 +19,7 @@ export default function Fridge() {
       <section>
         <h1 className="text-lg font-semibold">
           In the fridge
-          {cooked.length > 0 && <span className="ml-3 text-sm font-normal text-stone-500">{portions} portions</span>}
+          {cooked.length > 0 && <span className="ml-3 text-sm font-normal text-stone-500">{portions} {portions === 1 ? 'portion' : 'portions'}</span>}
         </h1>
         <p className="mb-4 text-sm text-stone-500">
           Batches you've cooked with portions left over (after the leftovers you've already planned).
