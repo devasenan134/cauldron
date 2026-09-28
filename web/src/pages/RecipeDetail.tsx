@@ -40,11 +40,18 @@ export default function RecipeDetail() {
 
   return (
     <div className="rise">
-      <Link to="/recipes" className="press mb-4 inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold">← Recipes</Link>
+      <div className="mb-4 flex items-center justify-between">
+        <Link to="/recipes" className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">← Recipes</Link>
+        {/* Your own recipes can be rewritten. */}
+        {r.can_edit && r.source !== 'cookwell' && (
+          <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
+        )}
+      </div>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <div className="relative overflow-hidden rounded-[32px] bg-sand lg:sticky lg:top-24 lg:self-start">
-          {r.image_url && <img src={thumb(r.image_url, 1000, 1000)} alt="" className="aspect-square w-full object-cover" />}
+          {r.image_url ? <img src={thumb(r.image_url, 1000, 1000)} alt="" className="aspect-square w-full object-cover" />
+            : <div className="grid aspect-[4/3] w-full place-items-center bg-ember-soft text-7xl">🍳</div>}
         </div>
         <div>
           <h1 className="font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">{r.title}</h1>
@@ -56,6 +63,7 @@ export default function RecipeDetail() {
             {r.tags.map((t) => <Pill key={t}>{t}</Pill>)}
           </div>
           {r.description && <p className="mt-4 whitespace-pre-line text-lg text-stone-700">{r.description}</p>}
+          {r.notes && <p className="mt-3 whitespace-pre-line rounded-2xl bg-sand p-3 text-stone-500">📝 {r.notes}</p>}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {r.video_url && <a href={r.video_url} target="_blank" rel="noreferrer"><Button variant="soft">▶ Watch video</Button></a>}
             {r.source_url && <a className="text-sm text-stone-500 hover:underline" href={r.source_url} target="_blank" rel="noreferrer">Original{r.author ? ` by ${r.author}` : ''}</a>}
@@ -113,6 +121,9 @@ function NutritionCard({ r }: { r: Recipe }) {
         <span className="font-display text-5xl font-extrabold">{Math.round(m.kcal).toLocaleString()}</span>
         <span className="text-stone-500">kcal</span>
       </p>
+      {parts.protein + parts.carbs + parts.fat === 0 ? (
+        <p className="mt-2 text-stone-500">{r.ingredients.length ? 'No ingredient has a weight yet: click one to add it.' : 'Add ingredients to see calories.'}</p>
+      ) : <>
       <div className="mt-4 flex h-2.5 overflow-hidden rounded-full">
         {(Object.keys(parts) as (keyof typeof parts)[]).map((k) => (
           <div key={k} style={{ width: `${(parts[k] / total) * 100}%`, background: MACRO[k] }} />
@@ -129,6 +140,7 @@ function NutritionCard({ r }: { r: Recipe }) {
           </div>
         ))}
       </div>
+      </>}
       {n.per_serving && <p className="mt-4 text-xs text-stone-500">Whole recipe: {kcal(n.total.kcal)}</p>}
       {n.left_out.length > 0 && <p className="mt-1 text-xs text-pink-deep">Not counted (no amount): {n.left_out.join(', ')}</p>}
       {n.estimated.length > 0 && <p className="mt-1 text-xs text-stone-400">Estimated: {n.estimated.join(', ')}</p>}
@@ -154,13 +166,11 @@ function AddToPlan({ r }: { r: Recipe }) {
       <DayChips selected={day} onPick={setDay} days={8} />
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div className="flex flex-col items-center rounded-2xl bg-cream p-3">
-          <span className="text-xs text-stone-500">Cook</span>
-          <Stepper big value={cook} onChange={(v) => { setCook(v); if (eat > v) setEat(v) }} label="cook" />
+                    <Stepper big value={cook} onChange={(v) => { setCook(v); if (eat > v) setEat(v) }} label="cook" />
           <span className="text-[11px] text-stone-500">portions</span>
         </div>
         <div className="flex flex-col items-center rounded-2xl bg-cream p-3">
-          <span className="text-xs text-stone-500">Eat now</span>
-          <Stepper big value={eat} step={0.5} min={0.5} onChange={(v) => { setEat(v); if (cook < v) setCook(v) }} label="eat" />
+                    <Stepper big value={eat} step={0.5} min={0.5} onChange={(v) => { setEat(v); if (cook < v) setCook(v) }} label="eat" />
           <span className="text-[11px] text-stone-500">portions</span>
         </div>
       </div>

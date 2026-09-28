@@ -84,6 +84,40 @@ export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: nu
 
 export type AppRelease = { version: string; notes: string; size: number }
 
+export type TagGroup = { name: string; tags: string[] }
+export type Facets = { cuisines: string[]; categories: string[]; tag_groups: TagGroup[] }
+
+/** What the recipe list is filtered and sorted by (the same options as the app). */
+export type RecipeFilter = {
+  q: string
+  cuisines: string[]
+  categories: string[]
+  tags: string[]
+  maxMinutes: number | null
+  kcal: 'light' | 'medium' | 'hearty' | null
+  mine: boolean
+  sort: 'title' | 'quickest' | 'lowest_kcal' | 'highest_protein' | 'newest'
+}
+export const KCAL_RANGES = { light: ['Under 400', null, 400], medium: ['400–700', 400, 700], hearty: ['Over 700', 700, null] } as const
+
+/** A recipe of your own, as sent to the server. */
+export type RecipeIn = {
+  title: string
+  description: string
+  image_url: string | null
+  video_url: string | null
+  source_url: string | null
+  servings: number | null
+  yield_text: string | null
+  total_minutes: number | null
+  cuisine: string | null
+  category: string | null
+  tags: string[]
+  notes: string
+  ingredients: { group: string | null; name: string; note: string; label: string }[]
+  steps: { title: string; text: string }[]
+}
+
 /** The session is missing or expired; the app shows the sign-in page. */
 export class SignedOut extends Error {}
 
@@ -114,9 +148,35 @@ export const api = {
   setTheme: (theme: Me['theme']) => request<Me>('PATCH', '/auth/me', { theme }),
   appLatest: () => request<AppRelease | null>('GET', '/app/latest'),
 
+  recipesFiltered: (f: RecipeFilter) => {
+    const p = new URLSearchParams()
+    if (f.q.trim()) p.set('q', f.q.trim())
+    p.set('sort', f.sort)
+    if (f.mine) p.set('mine', 'true')
+    if (f.maxMinutes) p.set('max_minutes', String(f.maxMinutes))
+    if (f.kcal) {
+      const [, min, max] = KCAL_RANGES[f.kcal]
+      if (min != null) p.set('min_kcal', String(min))
+      if (max != null) p.set('max_kcal', String(max))
+    }
+    f.cuisines.forEach((c) => p.append('cuisine', c))
+    f.categories.forEach((c) => p.append('category', c))
+    f.tags.forEach((t) => p.append('tag', t))
+    return request<RecipeSummary[]>('GET', `/recipes?${p}`)
+  },
+  createRecipe: (r: RecipeIn) => request<RecipeDetail>('POST', '/recipes', r),
+  updateRecipe: (id: number, r: RecipeIn) => request<RecipeDetail>('PUT', `/recipes/${id}`, r),
+  deleteRecipe: (id: number) => request<{ ok: boolean }>('DELETE', `/recipes/${id}`),
+  uploadImage: async (file: Blob): Promise<string> => {
+    const res = await fetch('/api/images', { method: 'POST', headers: { 'content-type': file.type || 'image/jpeg' }, body: file })
+    if (res.status === 401) throw new SignedOut()
+    if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`)
+    return ((await res.json()) as { url: string }).url
+  },
+  appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
-  facets: () => request<{ cuisines: string[]; categories: string[] }>('GET', '/recipes/facets'),
+  facets: () => request<Facets>('GET', '/recipes/facets'),
   recipe: (id: number) => request<RecipeDetail>('GET', `/recipes/${id}`),
   patchIngredient: (id: number, patch: { grams?: number | null; food_id?: number | null }) =>
     request<RecipeDetail>('PATCH', `/ingredients/${id}`, patch),

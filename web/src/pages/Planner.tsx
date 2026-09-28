@@ -48,6 +48,9 @@ export default function Planner() {
   const plan = useQuery({ queryKey: planKey, queryFn: () => api.plan(start) })
   const [dragging, setDragging] = useState<Drag | null>(null)
   const [includeQueue, setIncludeQueue] = useState(false)
+  // Week: all seven days side by side. Day: one day, big (like the app's two views).
+  const [view, setView] = useState<'week' | 'day'>('week')
+  const [picked, setPicked] = useState<string | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -136,6 +139,12 @@ export default function Planner() {
             <button aria-label="Next week" className="press rounded-full px-3 py-1.5 font-bold hover:bg-sand" onClick={() => setWeek(addDays(start, 7))}>→</button>
           </div>
           {start !== weekStart(today()) && <Chip selected={false} onClick={() => setWeek(weekStart(today()))}>This week</Chip>}
+          <div className="flex rounded-full bg-sand p-1">
+            {(['day', 'week'] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`press rounded-full px-4 py-1.5 text-sm capitalize ${view === v ? 'bg-paper font-bold shadow-sm' : 'font-medium text-stone-500'}`}>{v}</button>
+            ))}
+          </div>
           <div className="ml-auto flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-stone-600">
               <input type="checkbox" className="h-4 w-4 accent-ember-bright" checked={includeQueue} onChange={(e) => setIncludeQueue(e.target.checked)} />
@@ -151,16 +160,37 @@ export default function Planner() {
             {plan.isError && <p className="text-red-700">Couldn't load the plan: {String(plan.error)}</p>}
             {plan.isPending && <div className="grid auto-cols-[minmax(210px,1fr)] grid-flow-col gap-3 overflow-hidden">{Array.from({ length: 7 }, (_, i) => <Shimmer key={i} className="h-64 rounded-3xl" />)}</div>}
             <Column id={QUEUE} title="Queue" subtitle="planned, no day yet" entries={plan.data?.queue ?? []} horizontal />
-            {/* Days keep a readable width; when the week doesn't fit it scrolls sideways. */}
-            <div className="-mx-1 grid auto-cols-[minmax(210px,1fr)] grid-flow-col gap-3 overflow-x-auto px-1 pb-3">
-              {days.map((d) => {
-                const { weekday, date } = dayLabel(d)
-                return (
-                  <Column key={d} id={d} title={weekday} subtitle={date.replace(/^\D+/, '')} entries={plan.data!.days[d]}
-                    highlight={d === today()} total={dayTotal(plan.data!.days[d])} />
-                )
-              })}
-            </div>
+            {view === 'week' ? (
+              /* Days keep a readable width; when the week doesn't fit it scrolls sideways. */
+              <div className="-mx-1 grid auto-cols-[minmax(210px,1fr)] grid-flow-col gap-3 overflow-x-auto px-1 pb-3">
+                {days.map((d) => {
+                  const { weekday, date } = dayLabel(d)
+                  return (
+                    <Column key={d} id={d} title={weekday} subtitle={date.replace(/^\D+/, '')} entries={plan.data!.days[d]}
+                      highlight={d === today()} total={dayTotal(plan.data!.days[d])} />
+                  )
+                })}
+              </div>
+            ) : plan.data && (() => {
+              const day = picked && days.includes(picked) ? picked : days.includes(today()) ? today() : days[0]
+              const { weekday, date } = dayLabel(day)
+              return (
+                <div>
+                  <div className="mb-3 grid grid-cols-7 gap-2">
+                    {days.map((d) => (
+                      <button key={d} onClick={() => setPicked(d)}
+                        className={`press rounded-2xl py-2 text-center transition-colors ${d === day ? 'bg-ink text-cream' : 'bg-paper ring-1 ring-stone-200'} ${d === today() && d !== day ? 'ring-2 ring-ember-bright' : ''}`}>
+                        <span className="block text-xs opacity-70">{dayLabel(d).weekday}</span>
+                        <span className="block font-display text-lg font-bold">{d.slice(8).replace(/^0/, '')}</span>
+                        <span className={`mx-auto mt-0.5 block h-1.5 w-1.5 rounded-full ${plan.data!.days[d].length ? 'bg-ember-bright' : ''}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <Column id={day} title={day === today() ? 'Today' : weekday} subtitle={date} entries={plan.data.days[day]}
+                    highlight={day === today()} total={dayTotal(plan.data.days[day])} wide />
+                </div>
+              )
+            })()}
           </div>
         </div>
       </div>
@@ -178,7 +208,7 @@ export default function Planner() {
 
 const dayTotal = (entries: PlanEntry[]) => entries.reduce((s, e) => s + (e.kcal ?? 0), 0)
 
-function Column({ id, title, subtitle, entries, total, highlight, horizontal }: {
+function Column({ id, title, subtitle, entries, total, highlight, horizontal, wide }: {
   id: string
   title: string
   subtitle: string
@@ -186,6 +216,7 @@ function Column({ id, title, subtitle, entries, total, highlight, horizontal }: 
   total?: number
   highlight?: boolean
   horizontal?: boolean
+  wide?: boolean
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${id}` })
   return (
@@ -199,7 +230,7 @@ function Column({ id, title, subtitle, entries, total, highlight, horizontal }: 
         {total ? <span className="whitespace-nowrap font-display text-sm font-bold tabular-nums text-ember">{Math.round(total)}</span> : null}
       </div>
       <SortableContext items={entries.map((e) => `e:${e.id}`)} strategy={verticalListSortingStrategy}>
-        <div className={horizontal ? 'flex min-h-14 flex-wrap gap-2' : 'min-h-28 space-y-2'}>
+        <div className={horizontal ? 'flex min-h-14 flex-wrap gap-2' : wide ? 'grid min-h-40 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'min-h-28 space-y-2'}>
           {entries.map((e) => <EntryCard key={e.id} entry={e} compact={horizontal} />)}
           {entries.length === 0 && <div className="grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-stone-200 px-2 text-center text-xs text-stone-400">Drop recipes here</div>}
         </div>

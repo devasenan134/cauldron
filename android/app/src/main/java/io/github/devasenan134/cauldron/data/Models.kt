@@ -25,7 +25,54 @@ data class RecipeSummary(
 )
 
 @Serializable
-data class Facets(val cuisines: List<String>, val categories: List<String>)
+data class TagGroup(val name: String, val tags: List<String>)
+
+@Serializable
+data class Facets(val cuisines: List<String>, val categories: List<String>, val tagGroups: List<TagGroup> = emptyList())
+
+/** What the recipe list is filtered and sorted by. */
+data class RecipeFilter(
+    val q: String = "",
+    val cuisines: Set<String> = emptySet(),
+    val categories: Set<String> = emptySet(),
+    val tags: Set<String> = emptySet(),
+    val maxMinutes: Int? = null,
+    val kcal: KcalRange? = null,
+    val mine: Boolean = false,
+    val sort: String = "title",
+) {
+    /** How many filters are on (the search box and sort don't count). */
+    val count get() = cuisines.size + categories.size + tags.size + listOfNotNull(maxMinutes, kcal).size + (if (mine) 1 else 0)
+}
+
+enum class KcalRange(val label: String, val min: Int?, val max: Int?) {
+    Light("Under 400", null, 400), Medium("400–700", 400, 700), Hearty("Over 700", 700, null),
+}
+
+// A recipe of your own, as sent to the server (same shape as the library's).
+@Serializable
+data class IngredientIn(val group: String? = null, val name: String, val note: String = "", val label: String = "")
+
+@Serializable
+data class StepIn(val title: String = "", val text: String)
+
+@Serializable
+data class RecipeIn(
+    val title: String,
+    val description: String = "",
+    val imageUrl: String? = null,
+    val videoUrl: String? = null,
+    val sourceUrl: String? = null,
+    val servings: Double? = null,
+    val yieldText: String? = null,
+    val totalMinutes: Int? = null,
+    val cuisine: String? = null,
+    val category: String? = null,
+    val tags: List<String> = emptyList(),
+    val notes: String = "",
+    val ingredients: List<IngredientIn> = emptyList(),
+    val steps: List<StepIn> = emptyList(),
+)
 
 @Serializable
 data class Ingredient(
@@ -79,7 +126,11 @@ data class RecipeDetail(
     val ingredients: List<Ingredient> = emptyList(),
     val steps: List<Step> = emptyList(),
     val nutrition: Nutrition,
-)
+    val notes: String = "",
+) {
+    /** Your own recipe (not the shared library): you can rewrite or delete it. */
+    val isMine get() = canEdit && source != "cookwell"
+}
 
 @Serializable
 data class Food(val id: Int, val name: String, val source: String, val kcal: Double, val protein: Double, val fat: Double, val carbs: Double)

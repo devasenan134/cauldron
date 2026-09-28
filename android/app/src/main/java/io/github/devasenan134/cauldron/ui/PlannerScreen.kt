@@ -98,6 +98,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
     var addingOpen by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf<PlanEntry?>(null) }
     var groceryDialog by remember { mutableStateOf(false) }
+    var view by rememberSaveable { mutableStateOf("day") } // "day" or "week"
 
     val days = (0L until 7L).map { addDays(week, it) }
     // Page 0 is the queue; pages 1..7 are the days.
@@ -118,10 +119,18 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
             ScreenHeader("Plan", subtitle = "Week of ${monthDay(week)} · ${"%,d".format(weekKcal.roundToInt())} kcal") {
                 IconButton(onClick = { groceryDialog = true }) { Icon(Icons.Default.AddShoppingCart, "Make grocery list") }
             }
-            WeekStrip(week, plan, pager.currentPage, onWeek = { week = it }, onPage = { scope.launch { pager.animateScrollToPage(it) } })
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                Segmented(listOf("day" to "Day", "week" to "Week"), view) { view = it }
+            }
+            WeekStrip(week, plan, if (view == "day") pager.currentPage else -1, onWeek = { week = it },
+                onPage = { view = "day"; scope.launch { pager.animateScrollToPage(it) } })
             Loaded(load, retry) { p ->
                 PullToRefreshBox(refreshing, onRefresh = { scope.launch { refreshing = true; runCatching { store.loadPlan(week) }; refreshing = false } }) {
-                    HorizontalPager(pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+                    if (view == "week") {
+                        WeekList(p, days, actions,
+                            openDay = { i -> view = "day"; scope.launch { pager.scrollToPage(i) } },
+                            onAdd = { day -> adding = day; addingOpen = true })
+                    } else HorizontalPager(pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                         val day = if (page == QUEUE_PAGE) null else days[page - 1]
                         val entries = if (day == null) p.queue else p.days[day].orEmpty()
                         DayPage(day, entries, actions, onAdd = { adding = day; addingOpen = true })
@@ -254,6 +263,88 @@ private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions
             MealCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
         }
         item(key = "add") { AddMealButton(onAdd) }
+    }
+}
+
+/** Two or three options in a pill, the chosen one raised (like Settings → Theme). */
+@Composable
+fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+    Row(Modifier.clip(RoundedCornerShape(50)).background(C.surfaceAlt).padding(3.dp)) {
+        options.forEach { (value, label) ->
+            val on = value == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(if (on) C.surface else Color.Transparent)
+                    .pressable({ onPick(value) }, 0.95f).padding(horizontal = 18.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text(label, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) C.ink else C.muted, fontSize = 14.sp) }
+        }
+    }
+}
+
+/** The whole week at a glance: each day with its meals as compact rows. */
+@Composable
+private fun WeekList(p: Plan, days: List<String>, actions: PlanActions, openDay: (Int) -> Unit, onAdd: (String?) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding(top = 4.dp)) {
+        if (p.queue.isNotEmpty()) item(key = "queue") { WeekDay(null, p.queue, actions, { openDay(QUEUE_PAGE) }, { onAdd(null) }) }
+        days.forEachIndexed { i, d ->
+            item(key = d) { WeekDay(d, p.days[d].orEmpty(), actions, { openDay(i + 1) }, { onAdd(d) }) }
+        }
+    }
+}
+
+@Composable
+private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions, open: () -> Unit, add: () -> Unit) {
+    val total = entries.sumOf { it.kcal ?: 0.0 }
+    val isToday = day == today()
+    Column(Modifier.padding(top = 14.dp)) {
+        Row(Modifier.fillMaxWidth().pressable(open, 0.98f).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (day == null) "Queue" else weekdayLong(day), style = MaterialTheme.typography.titleMedium, color = if (isToday) C.goText else C.ink)
+            Text(if (day == null) "  no day yet" else "  ${monthDay(day)}", color = C.muted)
+            Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(1.dp).background(C.line))
+            if (total > 0) Text("%,d".format(total.roundToInt()), fontFamily = Display, fontWeight = FontWeight.Bold, color = C.goText)
+            Box(Modifier.padding(start = 6.dp).size(32.dp).clip(CircleShape).pressable(add, 0.85f), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Add, "Add a meal", tint = C.muted, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (entries.isEmpty()) Text("Nothing planned", color = C.faint, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 4.dp))
+        entries.forEachIndexed { i, e -> CompactMeal(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i) }
+    }
+}
+
+@Composable
+private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int) {
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(thumb(e.imageUrl, 140), null, contentScale = ContentScale.Crop,
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(C.surfaceAlt)
+                .then(if (e.recipeId != null) Modifier.pressable({ a.openRecipe(e.recipeId) }) else Modifier))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(e.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    e.isLeftover -> Pill("Leftovers", color = C.blueFg, background = C.blueBg)
+                    e.isBatch -> Pill("Batch · ${num(e.cookPortions ?: 0.0)}", color = C.purpleFg, background = C.purpleBg)
+                }
+                Text((if (e.isLeftover || e.isBatch) "  " else "") + listOfNotNull(
+                    if (e.servings != 1.0) plural(e.servings, "serving") else null, e.kcal?.let { kcal(it) }).joinToString(" · "),
+                    color = C.muted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${e.title}", tint = C.muted) }
+            DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
+                if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
+                if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
+                DropdownMenuItem(text = { Text("Eat one more") }, onClick = { menu = false; a.setServings(e, e.servings + 1) })
+                if (e.servings > 1) DropdownMenuItem(text = { Text("Eat one less") }, onClick = { menu = false; a.setServings(e, e.servings - 1) })
+                if (!e.isLeftover && e.recipeId != null) {
+                    if (e.isBatch) DropdownMenuItem(text = { Text("Not a batch") }, onClick = { menu = false; a.setCook(e, null) })
+                    else DropdownMenuItem(text = { Text("Batch cook") }, onClick = { menu = false; a.setCook(e, e.servings + 3) })
+                }
+                DropdownMenuItem(text = { Text(if (e.isBatch) "Remove (and its leftovers)" else "Remove", color = C.danger) }, onClick = { menu = false; a.remove(e) })
+            }
+        }
     }
 }
 

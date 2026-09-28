@@ -65,7 +65,7 @@ export default function Settings() {
 
       <SectionTitle>Android app</SectionTitle>
       <Card>
-        {app.data ? (
+        {app.data ? (<>
           <div className="flex flex-wrap items-center gap-4">
             <div className="text-4xl">📱</div>
             <div className="min-w-0 flex-1">
@@ -76,7 +76,13 @@ export default function Settings() {
             </div>
             <a href={`/api/app/download/${app.data.version}`} download><Button variant="accent">Download</Button></a>
           </div>
-        ) : (
+          {app.data.notes && (
+            <div className="mt-4 border-t border-stone-200 pt-4">
+              <p className="font-semibold">What's new in {app.data.version}</p>
+              <PatchNotes notes={app.data.notes} />
+            </div>
+          )}
+        </>) : (
           <p className="text-stone-500">{app.isPending ? 'Checking…' : 'No app build is available yet.'}</p>
         )}
       </Card>
@@ -89,6 +95,21 @@ export default function Settings() {
       </Card>
 
       {editingGoal && <GoalDialog goal={goal} onClose={() => setEditingGoal(false)} />}
+    </div>
+  )
+}
+
+/** Release notes as bullets; long ones fold to a few lines with "See more". */
+function PatchNotes({ notes, foldAt = 4 }: { notes: string; foldAt?: number }) {
+  const [open, setOpen] = useState(false)
+  const lines = notes.split('\n').filter((l) => l.trim()).map((l) => l.replace(/^\s*[-*]\s+/, ''))
+  const long = lines.length > foldAt || notes.length > 280
+  return (
+    <div className="mt-1">
+      <ul className={`list-disc space-y-1 pl-5 text-stone-700 ${long && !open ? 'line-clamp-4' : ''}`}>
+        {lines.map((l, i) => <li key={i}>{l}</li>)}
+      </ul>
+      {long && <button onClick={() => setOpen(!open)} className="mt-1 font-semibold text-ember hover:underline">{open ? 'See less' : 'See more'}</button>}
     </div>
   )
 }

@@ -27,6 +27,12 @@ FRUIT_YIELD = {("lemon", "juice"): 30, ("lemon", "zest"): 2, ("lime", "juice"): 
                ("lime", "zest"): 1.5, ("orange", "juice"): 85, ("orange", "zest"): 3}
 # Typical weight of one item, for foods USDA has no usable portion for.
 EACH = {
+    # whole produce (specific names before the general ones: the first match wins)
+    "green onion": 15, "scallion": 15, "spring onion": 15, "red onion": 150, "onion": 110,
+    "cherry tomato": 17, "tomato": 120, "sweet potato": 130, "potato": 200, "carrot": 60,
+    "bell pepper": 150, "jalape": 15, "zucchini": 200, "cucumber": 300, "avocado": 150,
+    "apple": 180, "banana": 120, "egg": 50,
+    "can": 240,  # a standard 15 oz can, drained (beans, chickpeas, tomatoes)
     "brioche": 60, "hoagie": 85, "sub roll": 85, "cubano": 85, "bun": 55, "shokupan": 45,
     "chicken breast": 230, "chicken thigh": 110, "chicken tender": 50, "chipotle": 12,
     "lavash": 60, "naan": 90, "roti": 40, "paratha": 80, "keto flour tortilla": 45,
@@ -39,7 +45,7 @@ EACH = {
 PORTION_PREF = ("medium", "large", "pepper", "tortilla", "muffin", "bagel", "roll", "shell",
                 "link", "pita, large", "fruit", "ear", "cucumber", "sweetpotato", "anchovy", "piece",
                 "whole", "each", "slice", "leaf", "spear", "bunch")
-COUNT_UNITS = {"ingredient", "clove", "slice", "slices", "stalk", "sprig", "bunch", "head",
+COUNT_UNITS = {"can", "tin", "ingredient", "clove", "slice", "slices", "stalk", "sprig", "bunch", "head",
                "serving", "a serving", "link"}
 
 
@@ -75,6 +81,29 @@ def weight_in_label(label: str) -> float | None:
     return round(n * WEIGHT_UNITS[m.group(1)], 1) if n else None
 
 
+# Volume units in millilitres, for recipes written by hand ("2 tbsp", "1 cup").
+VOLUME_ML = {"tsp": 5, "teaspoon": 5, "teaspoons": 5, "tbsp": 15, "tablespoon": 15, "tablespoons": 15,
+             "cup": 240, "cups": 240, "ml": 1, "l": 1000, "liter": 1000, "litre": 1000, "liters": 1000, "litres": 1000}
+# USDA portion names for each volume unit.
+VOLUME_NAMES = {5: ("tsp", "teaspoon"), 15: ("tbsp", "tablespoon"), 240: ("cup",)}
+
+
+def volume_in_label(label: str, food: Food | None) -> tuple[float, str] | None:
+    """'2 tbsp' -> grams, using the food's own USDA measure when it has one, else water's density."""
+    m = re.match(r"~?\s*[\d./]+(?:\s*(?:-|to)\s*[\d./]+)?\s*([a-z]+)\b", label.lower())
+    if not m or m.group(1) not in VOLUME_ML:
+        return None
+    n = count_from_label(label, None)
+    if not n:
+        return None
+    ml = VOLUME_ML[m.group(1)]
+    for p in (food.portions if food else []):
+        unit = p["unit"].lower()
+        if any(unit.startswith(name) or f" {name}" in unit for name in VOLUME_NAMES.get(ml, ())):
+            return round(n * p["grams"], 1), "portion"
+    return round(n * ml, 1), "estimate"
+
+
 def unit_weight(ing: Ingredient, food: Food | None, unit: str) -> float | None:
     name = ing.name.lower()
     portions = food.portions if food else []
@@ -104,6 +133,8 @@ def resolve_grams(ing: Ingredient, food: Food | None, grams_per_part: float | No
         return None, None
     if (weight := weight_in_label(label)) is not None:
         return weight, "given"
+    if (volume := volume_in_label(label, food)) is not None:
+        return volume
     if unit in ("part", "parts") or label.endswith(("part", "parts")):
         n = count_from_label(label, ing.amount)
         return (round(n * grams_per_part, 1), "parts") if n and grams_per_part else (None, None)

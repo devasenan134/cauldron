@@ -21,12 +21,17 @@ class Store(private val api: Api) {
     private val _batches = MutableStateFlow<List<PlanEntry>?>(null)
     val batches: StateFlow<List<PlanEntry>?> = _batches
 
-    fun recipesKey(q: String, cuisine: String, category: String) = "$q|$cuisine|$category"
+    fun recipesKey(f: RecipeFilter) = f.toString()
 
-    suspend fun loadRecipes(q: String, cuisine: String, category: String) {
-        val list = api.recipes(q, cuisine, category)
-        _recipes.update { it + (recipesKey(q, cuisine, category) to list) }
+    suspend fun loadRecipes(f: RecipeFilter) {
+        val list = api.recipes(f)
+        _recipes.update { it + (recipesKey(f) to list) }
     }
+
+    /** A recipe was created, changed or deleted: every cached list may be stale. */
+    fun recipesChanged() = _recipes.update { emptyMap() }
+
+    fun forgetRecipe(id: Int) = _recipe.update { it - id }
 
     suspend fun loadFacets() { _facets.value = api.facets() }
 

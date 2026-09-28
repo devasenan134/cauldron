@@ -93,9 +93,13 @@ fun <T> Loaded(
     is Load.Ready -> content(load.value)
 }
 
-/** Sanity CDN images are huge; ask for a resized one. */
-fun thumb(url: String?, w: Int, h: Int = w): String? =
-    if (url != null && "cdn.sanity.io" in url) "$url?w=$w&h=$h&fit=crop&auto=format" else url
+/** Sanity CDN images are huge; ask for a resized one. Photos uploaded to Cauldron live on its server. */
+fun thumb(url: String?, w: Int, h: Int = w): String? = when {
+    url == null -> null
+    "cdn.sanity.io" in url -> "$url?w=$w&h=$h&fit=crop&auto=format"
+    url.startsWith("/") -> io.github.devasenan134.cauldron.BuildConfig.API_URL.trimEnd('/') + url
+    else -> url
+}
 
 fun kcal(n: Double?): String = if (n == null) "—" else "${n.roundToInt()} kcal"
 

@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Schedule
@@ -99,7 +100,7 @@ private val SOURCE_NOTE = mapOf(
 private val HERO = 380.dp
 
 @Composable
-fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
+fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Unit) {
     val app = app()
     val store = app.store
     val scope = rememberCoroutineScope()
@@ -120,7 +121,10 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
             val groups = r.ingredients.groupBy { it.group.orEmpty() }
             LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
                 item {
-                    Box(Modifier.fillMaxWidth().height(HERO).clip(RoundedCornerShape(0.dp))) {
+                    // No photo (a recipe of your own, say): a short tinted header instead of a big blank.
+                    if (r.imageUrl == null) Box(Modifier.fillMaxWidth().height(200.dp).background(C.goSoft), contentAlignment = Alignment.Center) {
+                        Text("🍳", fontSize = 64.sp)
+                    } else Box(Modifier.fillMaxWidth().height(HERO).clip(RoundedCornerShape(0.dp))) {
                         AsyncImage(
                             thumb(r.imageUrl, 1000, 1000), null, contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().graphicsLayer {
@@ -143,6 +147,8 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
                             r.category?.let { Pill(it, background = C.surface) }
                         }
                         if (r.description.isNotBlank()) Text(r.description, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 14.dp))
+                        if (r.notes.isNotBlank()) Text("📝  ${r.notes}", style = MaterialTheme.typography.bodyMedium, color = C.muted,
+                            modifier = Modifier.padding(top = 10.dp).fillMaxWidth().background(C.surfaceAlt, RoundedCornerShape(14.dp)).padding(12.dp))
                         Links(r)
                         NutritionCard(r)
                     }
@@ -207,7 +213,9 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
         ) {
             FloatingCircle(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.ink) }
             Text(recipe?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 12.dp).graphicsLayer { alpha = barAlpha })
+                modifier = Modifier.weight(1f).padding(start = 12.dp).graphicsLayer { alpha = barAlpha })
+            // Your own recipes can be rewritten.
+            if (recipe?.isMine == true) FloatingCircle(edit) { Icon(Icons.Default.Edit, "Edit recipe", tint = C.ink) }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 80.dp))
     }
@@ -267,12 +275,15 @@ private fun NutritionCard(r: RecipeDetail) {
             // Where the calories come from: protein and carbs 4 kcal/g, fat 9.
             val p = m.protein * 4; val c = m.carbs * 4; val f = m.fat * 9
             val total = (p + c + f).takeIf { it > 0 } ?: 1.0
-            Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50))) {
+            if (p + c + f == 0.0) {
+                Text(if (r.ingredients.isEmpty()) "Add ingredients to see calories." else "No ingredient has a weight yet: tap one to add it.",
+                    color = C.muted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            } else Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50))) {
                 Box(Modifier.weight((p / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(ProteinColor))
                 Box(Modifier.weight((c / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(CarbsColor))
                 Box(Modifier.weight((f / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(FatColor))
             }
-            Row(Modifier.padding(top = 14.dp)) {
+            if (p + c + f > 0) Row(Modifier.padding(top = 14.dp)) {
                 Macro("Protein", m.protein, ProteinColor, Modifier.weight(1f))
                 Macro("Carbs", m.carbs, CarbsColor, Modifier.weight(1f))
                 Macro("Fat", m.fat, FatColor, Modifier.weight(1f))

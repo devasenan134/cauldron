@@ -26,6 +26,8 @@ class ApiException(val code: Int, message: String) : IOException(message)
 /** The Cauldron server's /api. Every call throws IOException when offline. */
 class Api(baseUrl: String, private val token: () -> String?, private val onSignedOut: () -> Unit) {
     private val base = baseUrl.trimEnd('/') + "/api"
+    /** The server's address, for photos stored on it ("/api/images/…"). */
+    val origin = baseUrl.trimEnd('/')
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
 
     // --- auth
@@ -39,8 +41,31 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun signOut() { post<JsonElement>("/auth/logout", JsonObject(emptyMap())) }
 
     // --- recipes
-    suspend fun recipes(q: String = "", cuisine: String = "", category: String = ""): List<RecipeSummary> =
-        get("/recipes", "q" to q, "cuisine" to cuisine, "category" to category)
+    suspend fun recipes(q: String = ""): List<RecipeSummary> = get("/recipes", "q" to q)
+    suspend fun recipes(f: RecipeFilter): List<RecipeSummary> = get(
+        "/recipes",
+        *(listOf("q" to f.q.trim(), "sort" to f.sort, "mine" to if (f.mine) "true" else "",
+            "max_minutes" to (f.maxMinutes?.toString() ?: ""),
+            "min_kcal" to (f.kcal?.min?.toString() ?: ""), "max_kcal" to (f.kcal?.max?.toString() ?: "")) +
+            f.cuisines.map { "cuisine" to it } + f.categories.map { "category" to it } + f.tags.map { "tag" to it }).toTypedArray(),
+    )
+    suspend fun createRecipe(body: RecipeIn): RecipeDetail = post("/recipes", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)
+    suspend fun updateRecipe(id: Int, body: RecipeIn): RecipeDetail = put("/recipes/$id", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)
+    suspend fun deleteRecipe(id: Int) { delete<JsonElement>("/recipes/$id") }
+
+    /** Upload a photo; returns its URL on the server. */
+    suspend fun uploadImage(bytes: ByteArray, type: String): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("$base/images").apply {
+            token()?.let { header("Authorization", "Bearer $it") }
+            post(bytes.toRequestBody(type.toMediaType()))
+        }.build()
+        http.newCall(request).execute().use { res ->
+            if (res.code == 401) { onSignedOut(); throw SignedOutException() }
+            val text = res.body.string()
+            if (!res.isSuccessful) throw ApiException(res.code, detail(text) ?: "Upload failed (${res.code})")
+            (json.parseToJsonElement(text) as JsonObject)["url"].toString().trim('"')
+        }
+    }
     suspend fun facets(): Facets = get("/recipes/facets")
     suspend fun recipe(id: Int): RecipeDetail = get("/recipes/$id")
     /** Set grams and/or food; pass JsonNull to clear. Returns the whole updated recipe. */
@@ -69,6 +94,8 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     // --- app updates
     /** The newest app version the server has, or null. */
     suspend fun latestApp(): AppRelease? = get("/app/latest")
+    /** Every app version on the server with its notes, newest first. */
+    suspend fun appReleases(): List<AppRelease> = get("/app/releases")
 
     /** Download an app version into [file], reporting progress from 0 to 1. */
     suspend fun downloadApp(version: String, file: java.io.File, onProgress: (Float) -> Unit) = withContext(Dispatchers.IO) {
@@ -105,6 +132,9 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
 
     private suspend inline fun <reified T> patch(path: String, body: JsonObject): T =
         json.decodeFromString(call("PATCH", path, body, emptyArray()))
+
+    private suspend inline fun <reified T> put(path: String, body: JsonObject): T =
+        json.decodeFromString(call("PUT", path, body, emptyArray()))
 
     private suspend inline fun <reified T> delete(path: String, vararg query: Pair<String, String>): T =
         json.decodeFromString(call("DELETE", path, null, query))

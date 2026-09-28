@@ -10,7 +10,7 @@ from sqlmodel import Session
 
 from .db import engine, init_db
 from .deps import current_user
-from .routes import app_updates, auth, grocery, planner, recipes
+from .routes import app_updates, auth, grocery, images, planner, recipes
 from .users import claim_placeholder
 
 # Built website (web/dist); served at / when present.
@@ -27,6 +27,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Cauldron", lifespan=lifespan)
 app.include_router(auth.router, prefix="/api")
+app.include_router(images.public_router, prefix="/api")
+app.include_router(images.upload_router, prefix="/api")
 # Everything else needs a signed-in user.
 for module in (recipes, planner, grocery, app_updates):
     app.include_router(module.router, prefix="/api", dependencies=[Depends(current_user)])

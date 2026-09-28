@@ -44,6 +44,17 @@ def latest():
     return AppRelease(version=version, notes=notes.read_text().strip() if notes.is_file() else "", size=apk.stat().st_size)
 
 
+@router.get("/releases", response_model=list[AppRelease])
+def all_releases():
+    """Every app version on the server, newest first, with its notes."""
+    found = releases()
+    out = []
+    for version in sorted(found, key=version_key, reverse=True):
+        notes = found[version].with_suffix(".md")
+        out.append(AppRelease(version=version, notes=notes.read_text().strip() if notes.is_file() else "", size=found[version].stat().st_size))
+    return out
+
+
 @router.get("/download/{version}")
 def download(version: str):
     apk = releases().get(version)

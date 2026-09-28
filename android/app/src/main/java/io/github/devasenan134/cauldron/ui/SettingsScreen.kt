@@ -32,6 +32,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.animateContentSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -163,8 +167,16 @@ private fun UpdatesCard() {
         } catch (e: Exception) { UpdateStep.Failed(e.friendly()) }
     }
 
+    var history by remember { mutableStateOf<List<AppRelease>>(emptyList()) }
+    LaunchedEffect(Unit) { history = runCatching { app.api.appReleases() }.getOrDefault(emptyList()) }
+    val current = history.firstOrNull { it.version == updates.currentVersion }
+
     Card {
         Text("Installed: version ${updates.currentVersion}", style = MaterialTheme.typography.bodyMedium)
+        current?.notes?.takeIf { it.isNotBlank() }?.let {
+            Text("What's new in ${current.version}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+            PatchNotes(it, Modifier.padding(top = 4.dp))
+        }
         val release = available
         if (release == null) {
             when (val s = step) {
@@ -189,7 +201,7 @@ private fun UpdatesCard() {
             Icon(Icons.Default.SystemUpdate, null, tint = C.goText)
             Text("  Version ${release.version} is available", fontWeight = FontWeight.SemiBold, color = C.goText)
         }
-        if (release.notes.isNotBlank()) Text(release.notes.lines().joinToString("\n") { it.replaceFirst(Regex("^\\s*[-*] "), "• ") }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+        if (release.notes.isNotBlank()) PatchNotes(release.notes, Modifier.padding(top = 8.dp))
         if (release.size > 0) Text("%.1f MB".format(release.size / 1_048_576.0), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
 
@@ -214,6 +226,22 @@ private fun UpdatesCard() {
                 Text("Download and install")
             }
         }
+    }
+}
+
+/** Release notes as bullets; long ones fold to a few lines with "See more". */
+@Composable
+fun PatchNotes(notes: String, modifier: Modifier = Modifier, foldAt: Int = 4) {
+    val lines = notes.lines().filter { it.isNotBlank() }.map { it.replaceFirst(Regex("^\\s*[-*] "), "•  ") }
+    var open by remember(notes) { mutableStateOf(false) }
+    val long = lines.size > foldAt || notes.length > 280
+    Column(modifier.animateContentSize()) {
+        Text(
+            lines.joinToString("\n"), style = MaterialTheme.typography.bodyMedium, color = C.ink, lineHeight = 21.sp,
+            maxLines = if (open || !long) Int.MAX_VALUE else foldAt, overflow = TextOverflow.Ellipsis,
+        )
+        if (long) Text(if (open) "See less" else "See more", color = C.goText, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).pressable({ open = !open }, 0.95f).padding(vertical = 2.dp))
     }
 }
 

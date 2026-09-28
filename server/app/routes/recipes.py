@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, SQLModel, col, or_, select
 
 from ..db import get_session
 from ..deps import current_user
 from ..models import Food, Ingredient, Recipe, RecipeBase, Step, User
 from ..nutrition import macros, recipe_nutrition
+from ..recipe_edit import RecipeIn, save_recipe
 
 router = APIRouter()
 
@@ -114,30 +115,87 @@ def recipe_detail(session: Session, recipe: Recipe, user: User) -> RecipeDetail:
                         nutrition=Nutrition(**recipe_nutrition(ingredients, foods, recipe.servings)))
 
 
+# Cook Well's tags come in families; filters are OR within a family and AND across them.
+TAG_GROUPS = {
+    "Difficulty": ["Easy", "Level Up"],
+    "Time": ["Quick", "Under 1 Hour", "I Got Time"],
+    "Mood": ["Feel Good", "Bad Day", "Happy", "Lazy", "Curious", "Guilty", "Party", "Impress", "Down",
+             "Energized", "Chill", "Date Night"],
+    "Protein": ["Chicken", "Beef", "Pork", "Eggs", "Seafood", "Vegetarian"],
+    "Method": ["Stir Fry", "Bake", "Braise", "Sear", "Crispy", "Grill", "Deep Fry", "Framework"],
+    "Diet": ["High Protein", "Gluten Free", "Low Fat", "Low Carb", "Dairy Free"],
+}
+GROUP_OF = {t.lower(): g for g, tags in TAG_GROUPS.items() for t in tags}
+
+SORTS = {"title", "quickest", "lowest_kcal", "highest_protein", "newest"}
+
+
 @router.get("/recipes", response_model=list[RecipeSummary])
-def list_recipes(q: str | None = None, cuisine: str | None = None, category: str | None = None,
-                 session: Session = Depends(get_session), user: User = Depends(current_user)):
-    stmt = select(Recipe).where(visible(user))
+def list_recipes(
+    q: str | None = None,
+    cuisine: list[str] = Query(default=[]),
+    category: list[str] = Query(default=[]),
+    tag: list[str] = Query(default=[]),
+    max_minutes: int | None = None,
+    min_kcal: float | None = None,
+    max_kcal: float | None = None,
+    mine: bool = False,
+    sort: str = "title",
+    session: Session = Depends(get_session), user: User = Depends(current_user),
+):
+    stmt = select(Recipe).where(Recipe.owner_id == user.id, Recipe.source != SHARED_SOURCE) if mine else select(Recipe).where(visible(user))
     if q:
         like = f"%{q}%"
         in_ingredients = select(Ingredient.recipe_id).where(col(Ingredient.name).ilike(like))
         stmt = stmt.where(or_(col(Recipe.title).ilike(like), col(Recipe.id).in_(in_ingredients)))
-    if cuisine:
-        stmt = stmt.where(Recipe.cuisine == cuisine)
-    if category:
-        stmt = stmt.where(Recipe.category == category)
-    recipes = session.exec(stmt.order_by(Recipe.title)).all()
+    if cuisine := [c for c in cuisine if c]:
+        stmt = stmt.where(col(Recipe.cuisine).in_(cuisine))
+    if category := [c for c in category if c]:
+        stmt = stmt.where(col(Recipe.category).in_(category))
+    if max_minutes:
+        stmt = stmt.where(col(Recipe.total_minutes).is_not(None), Recipe.total_minutes <= max_minutes)
+    recipes = list(session.exec(stmt.order_by(Recipe.title)))
+    if tag := [t for t in tag if t]:
+        # OR within a tag family, AND across families.
+        groups: dict[str, set[str]] = {}
+        for t in tag:
+            groups.setdefault(GROUP_OF.get(t.lower(), t.lower()), set()).add(t.lower())
+        recipes = [r for r in recipes if all({x.lower() for x in r.tags} & want for want in groups.values())]
     nutrition = nutrition_for(session, recipes)
-    return [RecipeSummary(**r.model_dump(), kcal_per_serving=(nutrition[r.id]["per_serving"] or {}).get("kcal"))
-            for r in recipes]
+
+    def per(r: Recipe, key: str) -> float | None:
+        return (nutrition[r.id]["per_serving"] or {}).get(key)
+
+    if min_kcal is not None or max_kcal is not None:
+        recipes = [r for r in recipes if (k := per(r, "kcal")) is not None
+                   and (min_kcal is None or k >= min_kcal) and (max_kcal is None or k <= max_kcal)]
+    if sort == "quickest":
+        recipes.sort(key=lambda r: (r.total_minutes is None, r.total_minutes or 0))
+    elif sort == "lowest_kcal":
+        recipes.sort(key=lambda r: (per(r, "kcal") is None, per(r, "kcal") or 0))
+    elif sort == "highest_protein":
+        recipes.sort(key=lambda r: -(per(r, "protein") or 0))
+    elif sort == "newest":
+        recipes.sort(key=lambda r: r.created_at, reverse=True)
+    return [RecipeSummary(**r.model_dump(), kcal_per_serving=per(r, "kcal")) for r in recipes]
 
 
 @router.get("/recipes/facets")
 def recipe_facets(session: Session = Depends(get_session), user: User = Depends(current_user)):
-    """Cuisines and categories in use, for filters."""
+    """What the filters offer: cuisines, meals, and tags in their families (only ones in use)."""
     def distinct(column):
         return sorted(v for v in session.exec(select(column).where(visible(user)).distinct()) if v)
-    return {"cuisines": distinct(Recipe.cuisine), "categories": distinct(Recipe.category)}
+    used: dict[str, int] = {}
+    for tags in session.exec(select(Recipe.tags).where(visible(user))):
+        for t in tags or []:
+            used[t] = used.get(t, 0) + 1
+    groups = [{"name": g, "tags": [t for t in tags if t in used]} for g, tags in TAG_GROUPS.items()]
+    known = {t for tags in TAG_GROUPS.values() for t in tags}
+    other = sorted((t for t in used if t not in known and used[t] >= 3), key=lambda t: -used[t])
+    if other:
+        groups.append({"name": "More", "tags": other})
+    return {"cuisines": distinct(Recipe.cuisine), "categories": distinct(Recipe.category),
+            "tag_groups": [g for g in groups if g["tags"]]}
 
 
 @router.get("/recipes/{recipe_id}", response_model=RecipeDetail)
@@ -177,3 +235,32 @@ def search_foods(q: str, limit: int = 25, session: Session = Depends(get_session
     foods.sort(key=lambda f: (f.kcal == 0 and "water" not in f.name.lower() and "salt" not in f.name.lower(),
                               rank.get(f.source, 3), len(f.name)))
     return foods[:limit]
+
+
+@router.post("/recipes", response_model=RecipeDetail)
+def create_recipe(body: RecipeIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """A recipe of your own (only you see it)."""
+    if not body.title.strip():
+        raise HTTPException(400, "a recipe needs a title")
+    recipe = save_recipe(session, Recipe(owner_id=user.id, source="manual", title=body.title, slug=""), body)
+    return recipe_detail(session, recipe, user)
+
+
+@router.put("/recipes/{recipe_id}", response_model=RecipeDetail)
+def update_recipe(recipe_id: int, body: RecipeIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    recipe = owned_recipe(session, recipe_id, user, edit=True)
+    if recipe.source == SHARED_SOURCE:
+        raise HTTPException(403, "library recipes can't be rewritten; fix ingredient weights and foods instead")
+    if not body.title.strip():
+        raise HTTPException(400, "a recipe needs a title")
+    return recipe_detail(session, save_recipe(session, recipe, body), user)
+
+
+@router.delete("/recipes/{recipe_id}")
+def delete_recipe(recipe_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    recipe = owned_recipe(session, recipe_id, user, edit=True)
+    if recipe.source == SHARED_SOURCE:
+        raise HTTPException(403, "library recipes can't be deleted")
+    session.delete(recipe)
+    session.commit()
+    return {"ok": True}
