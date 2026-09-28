@@ -3,6 +3,8 @@ services:
     build: .
     container_name: cauldron
     restart: unless-stopped
+    # the host has run out of docker subnets for per-project networks
+    network_mode: bridge
     ports:
       - "8130:8000"
     volumes:
