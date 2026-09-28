@@ -4,28 +4,30 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Kitchen
 import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -35,17 +37,19 @@ import androidx.navigation.navArgument
 import io.github.devasenan134.cauldron.data.Session
 import io.github.devasenan134.cauldron.ui.CauldronTheme
 import io.github.devasenan134.cauldron.ui.Cream
-import io.github.devasenan134.cauldron.ui.EmberSoft
-import io.github.devasenan134.cauldron.ui.Ember
+import io.github.devasenan134.cauldron.ui.FloatingTabBar
 import io.github.devasenan134.cauldron.ui.FridgeScreen
 import io.github.devasenan134.cauldron.ui.GroceryScreen
+import io.github.devasenan134.cauldron.ui.HomeScreen
+import io.github.devasenan134.cauldron.ui.LocalBottomSpace
+import io.github.devasenan134.cauldron.ui.LocalOpenSettings
 import io.github.devasenan134.cauldron.ui.PlannerScreen
 import io.github.devasenan134.cauldron.ui.RecipeScreen
 import io.github.devasenan134.cauldron.ui.RecipesScreen
-import io.github.devasenan134.cauldron.ui.LocalOpenSettings
 import io.github.devasenan134.cauldron.ui.SettingsScreen
 import io.github.devasenan134.cauldron.ui.SignInScreen
-import androidx.compose.runtime.CompositionLocalProvider
+import io.github.devasenan134.cauldron.ui.TabItem
+import io.github.devasenan134.cauldron.ui.app
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,73 +59,81 @@ class MainActivity : ComponentActivity() {
         setContent {
             CauldronTheme {
                 val state by app.session.state.collectAsState()
-                when (state) {
-                    Session.State.Loading -> Box(Modifier.fillMaxSize())
-                    Session.State.SignedOut -> SignInScreen()
-                    is Session.State.SignedIn -> AppRoot()
+                Box(Modifier.fillMaxSize().background(Cream)) {
+                    when (state) {
+                        Session.State.Loading -> {}
+                        Session.State.SignedOut -> SignInScreen()
+                        is Session.State.SignedIn -> AppRoot()
+                    }
                 }
             }
         }
     }
 }
 
-private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
-    Recipes("recipes", "Recipes", Icons.AutoMirrored.Filled.MenuBook),
-    Plan("plan", "Plan", Icons.Default.CalendarMonth),
-    Fridge("fridge", "Fridge", Icons.Default.Kitchen),
-    Grocery("grocery", "Grocery", Icons.Default.ShoppingCart),
+private object Routes {
+    const val HOME = "home"
+    const val RECIPES = "recipes"
+    const val PLAN = "plan"
+    const val FRIDGE = "fridge"
+    const val GROCERY = "grocery"
+    const val SETTINGS = "settings"
+    fun recipe(id: Int) = "recipe/$id"
+}
+
+private fun NavHostController.tab(route: String) = navigate(route) {
+    popUpTo(graph.findStartDestination().id) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
 }
 
 @Composable
 private fun AppRoot() {
     val nav = rememberNavController()
-    val entry by nav.currentBackStackEntryAsState()
-    val route = entry?.destination?.route
-    val app = io.github.devasenan134.cauldron.ui.app()
+    val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    val app = app()
     val toBuy = app.grocery.items.collectAsState().value.count { !it.checked }
+    val tabs = listOf(
+        TabItem(Routes.HOME, "Home", Icons.Default.Home),
+        TabItem(Routes.RECIPES, "Recipes", Icons.AutoMirrored.Filled.MenuBook),
+        TabItem(Routes.PLAN, "Plan", Icons.Default.CalendarMonth),
+        TabItem(Routes.FRIDGE, "Fridge", Icons.Default.Kitchen),
+        TabItem(Routes.GROCERY, "Grocery", Icons.Default.ShoppingCart, badge = toBuy),
+    )
+    val showBar = route in tabs.map { it.route }
+    val openRecipe: (Int) -> Unit = { nav.navigate(Routes.recipe(it)) }
 
-    CompositionLocalProvider(LocalOpenSettings provides { nav.navigate("settings") { launchSingleTop = true } }) {
-    Scaffold(
-        containerColor = Cream,
-        bottomBar = {
-            NavigationBar(containerColor = Cream) {
-                Tab.entries.forEach { tab ->
-                    val selected = route == tab.route || (tab == Tab.Recipes && route?.startsWith("recipe/") == true)
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            nav.navigate(tab.route) {
-                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = {
-                            if (tab == Tab.Grocery && toBuy > 0) {
-                                BadgedBox(badge = { Badge(containerColor = Ember) { Text("$toBuy") } }) { Icon(tab.icon, null) }
-                            } else {
-                                Icon(tab.icon, null)
-                            }
-                        },
-                        label = { Text(tab.label) },
-                        colors = NavigationBarItemDefaults.colors(indicatorColor = EmberSoft, selectedIconColor = Ember, selectedTextColor = Ember),
-                    )
+    CompositionLocalProvider(
+        LocalOpenSettings provides { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+        LocalBottomSpace provides if (showBar) 84.dp else 0.dp,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            NavHost(
+                nav, startDestination = Routes.HOME, modifier = Modifier.fillMaxSize(),
+                enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) },
+            ) {
+                composable(Routes.HOME) {
+                    HomeScreen(openRecipe = openRecipe, openTab = { nav.tab(it) })
                 }
+                composable(Routes.RECIPES) { RecipesScreen(openRecipe = openRecipe) }
+                composable(
+                    "recipe/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                    enterTransition = { slideInVertically(tween(320)) { it / 6 } + fadeIn(tween(220)) },
+                    popExitTransition = { slideOutVertically(tween(260)) { it / 6 } + fadeOut(tween(200)) },
+                ) {
+                    RecipeScreen(id = it.arguments!!.getInt("id"), back = { nav.popBackStack() }, openPlan = { nav.tab(Routes.PLAN) })
+                }
+                composable(Routes.PLAN) { PlannerScreen(openRecipe = openRecipe, openGrocery = { nav.tab(Routes.GROCERY) }) }
+                composable(Routes.FRIDGE) { FridgeScreen(openRecipe = openRecipe) }
+                composable(Routes.GROCERY) { GroceryScreen(openPlan = { nav.tab(Routes.PLAN) }) }
+                composable(Routes.SETTINGS) { SettingsScreen(back = { nav.popBackStack() }) }
             }
-        },
-    ) { padding ->
-        NavHost(nav, startDestination = Tab.Recipes.route, modifier = Modifier.padding(bottom = padding.calculateBottomPadding())) {
-            composable(Tab.Recipes.route) { RecipesScreen(openRecipe = { nav.navigate("recipe/$it") }) }
-            composable("recipe/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) {
-                RecipeScreen(id = it.arguments!!.getInt("id"), back = { nav.popBackStack() }, openPlan = { nav.navigate(Tab.Plan.route) })
+            AnimatedVisibility(
+                showBar, modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut(),
+            ) {
+                FloatingTabBar(tabs, route, onSelect = { nav.tab(it.route) })
             }
-            composable(Tab.Plan.route) {
-                PlannerScreen(openRecipe = { nav.navigate("recipe/$it") }, openGrocery = { nav.navigate(Tab.Grocery.route) })
-            }
-            composable(Tab.Fridge.route) { FridgeScreen(openRecipe = { nav.navigate("recipe/$it") }) }
-            composable(Tab.Grocery.route) { GroceryScreen(openPlan = { nav.navigate(Tab.Plan.route) }) }
-            composable("settings") { SettingsScreen(back = { nav.popBackStack() }) }
         }
-    }
     }
 }

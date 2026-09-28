@@ -1,25 +1,28 @@
 package io.github.devasenan134.cauldron.ui
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -27,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +50,8 @@ import io.github.devasenan134.cauldron.data.PlanEntry
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 // Cooked food keeps about 3–4 days in the fridge.
 private const val EAT_SOON_DAYS = 3
@@ -53,73 +59,64 @@ private const val EAT_SOON_DAYS = 3
 @Composable
 fun FridgeScreen(openRecipe: (Int) -> Unit) {
     val app = app()
+    val store = app.store
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var load by remember { mutableStateOf<Load<List<PlanEntry>>>(Load.Loading) }
-    var attempt by remember { mutableStateOf(0) }
+    val batches by store.batches.collectAsState()
+    val (load, retry) = cached(batches, Unit) { store.loadBatches() }
     var refreshing by remember { mutableStateOf(false) }
     var tossing by remember { mutableStateOf<PlanEntry?>(null) }
 
-    suspend fun reload() {
-        load = try { Load.Ready(app.api.batches()) } catch (e: Exception) { if (load is Load.Ready) { snackbar.showSnackbar(e.friendly()); load } else Load.Failed(e.friendly()) }
-    }
-    LaunchedEffect(attempt) { reload() }
     fun act(msg: String?, block: suspend () -> Unit) = scope.launch {
         try { block(); msg?.let { launch { snackbar.showSnackbar(it) } } } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
-        reload()
+        store.refreshPlans()
     }
 
-    Scaffold(topBar = { TopBar("Fridge") }, snackbarHost = { SnackbarHost(snackbar) }, containerColor = Cream) { padding ->
-        Loaded(load, onRetry = { attempt++ }) { batches ->
-            val cooked = batches.filter { it.day != null && it.day <= today() }
-            val coming = batches.filter { it.day == null || it.day > today() }
-            PullToRefreshBox(refreshing, onRefresh = { scope.launch { refreshing = true; reload(); refreshing = false } }, modifier = Modifier.padding(padding)) {
-                LazyColumn(contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text("In the fridge", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            val total = cooked.sumOf { it.portionsLeft ?: 0.0 }
-                            if (cooked.isNotEmpty()) Text("  ${num(total)} ${if (total == 1.0) "portion" else "portions"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Box(Modifier.fillMaxSize()) {
+        val cooked = batches.orEmpty().filter { it.day != null && it.day <= today() }
+        val coming = batches.orEmpty().filter { it.day == null || it.day > today() }
+        val portions = cooked.sumOf { it.portionsLeft ?: 0.0 }
+        Column {
+            ScreenHeader("Fridge", subtitle = if (cooked.isEmpty()) "Batch cooking" else "${plural(portions, "portion")} ready to eat")
+            Loaded(load, retry) { _ ->
+                PullToRefreshBox(refreshing, onRefresh = { scope.launch { refreshing = true; runCatching { store.loadBatches() }; refreshing = false } }) {
+                    LazyColumn(contentPadding = screenPadding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxSize()) {
+                        if (cooked.isEmpty()) item {
+                            Empty("🥡", "Nothing in the fridge", "Plan a meal that cooks more than you eat (or use Batch cook on a planned meal). Once its day comes, the rest shows up here.")
                         }
-                        Text("Batches you've cooked with portions left over (after the leftovers you've already planned).",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (cooked.isEmpty()) item {
-                        Surface(color = Color.White, shape = RoundedCornerShape(12.dp)) {
-                            Text("Nothing yet. Plan a meal that cooks more than you eat (or use Batch cook on a planned meal), and once its day comes the rest shows up here.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+                        items(cooked, key = { it.id }) { b ->
+                            BatchCard(b, Modifier.animateItem(), open = { b.recipeId?.let(openRecipe) },
+                                onAte = {
+                                    store.editEntry(b.id) { it.copy(portionsLeft = (it.portionsLeft ?: 0.0) - 1) }
+                                    act("Logged 1 portion for today") {
+                                        app.api.addEntry(buildJsonObject { put("day", today()); put("leftover_of", b.id); put("servings", 1.0) })
+                                    }
+                                },
+                                onToss = { tossing = b })
                         }
-                    }
-                    items(cooked, key = { it.id }) { b ->
-                        BatchCard(b, upcoming = false, open = { b.recipeId?.let(openRecipe) },
-                            onAte = { act("Logged 1 portion for today") {
-                                app.api.addEntry(buildJsonObject { put("day", today()); put("leftover_of", b.id); put("servings", 1.0) })
-                            } },
-                            onToss = { tossing = b })
-                    }
-                    if (coming.isNotEmpty()) {
-                        item {
-                            Spacer(Modifier.size(8.dp))
-                            Text("Coming up", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text("Batches on the plan that haven't been cooked yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (coming.isNotEmpty()) {
+                            item { SectionLabel("Coming up") }
+                            items(coming, key = { it.id }) { b -> ComingRow(b, Modifier.animateItem()) { b.recipeId?.let(openRecipe) } }
                         }
-                        items(coming, key = { it.id }) { b -> BatchCard(b, upcoming = true, open = { b.recipeId?.let(openRecipe) }, onAte = {}, onToss = {}) }
                     }
                 }
             }
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = LocalBottomSpace.current + 16.dp))
     }
 
     tossing?.let { b ->
         AlertDialog(
             onDismissRequest = { tossing = null },
             title = { Text("Toss the rest?") },
-            text = { Text("Mark the ${num(b.portionsLeft ?: 0.0)} portions of ${b.title} left in the fridge as thrown away.") },
+            text = { Text("Mark the ${plural(b.portionsLeft ?: 0.0, "portion")} of ${b.title} left in the fridge as thrown away.") },
             confirmButton = {
                 TextButton(onClick = {
                     tossing = null
-                    act(null) { app.api.updateEntry(b.id, buildJsonObject { put("discarded", b.discarded + (b.portionsLeft ?: 0.0)) }) }
-                }) { Text("Toss", color = Danger) }
+                    val gone = b.portionsLeft ?: 0.0
+                    store.editEntry(b.id) { it.copy(portionsLeft = 0.0, discarded = it.discarded + gone) }
+                    act(null) { app.api.updateEntry(b.id, buildJsonObject { put("discarded", b.discarded + gone) }) }
+                }) { Text("Toss", color = Danger, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { tossing = null }) { Text("Keep") } },
         )
@@ -127,38 +124,66 @@ fun FridgeScreen(openRecipe: (Int) -> Unit) {
 }
 
 @Composable
-private fun BatchCard(b: PlanEntry, upcoming: Boolean, open: () -> Unit, onAte: () -> Unit, onToss: () -> Unit) {
-    val age = b.day?.let { daysAgo(it) }
-    val old = !upcoming && age != null && age >= EAT_SOON_DAYS
-    Surface(color = Color.White, shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, if (old) Amber.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant)) {
-        Row(Modifier.padding(12.dp)) {
-            AsyncImage(thumb(b.imageUrl, 200), null, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(80.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = open))
-            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                Text(b.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable(onClick = open))
-                Row {
-                    Text(
-                        when {
-                            upcoming -> b.day?.let { "cooking ${weekdayShort(it)} ${monthDay(it)}" } ?: "in the queue"
-                            age == 0L -> "cooked today"
-                            age == 1L -> "cooked yesterday"
-                            else -> "cooked $age days ago"
-                        },
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (old) Text(" · eat soon", style = MaterialTheme.typography.bodySmall, color = Amber, fontWeight = FontWeight.SemiBold)
+private fun BatchCard(b: PlanEntry, modifier: Modifier, open: () -> Unit, onAte: () -> Unit, onToss: () -> Unit) {
+    val age = daysAgo(b.day!!)
+    val old = age >= EAT_SOON_DAYS
+    val left = b.portionsLeft ?: 0.0
+    val made = b.cookPortions ?: 0.0
+    Surface(color = Paper, shape = RoundedCornerShape(28.dp), modifier = modifier.fillMaxWidth()) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(170.dp).pressable(open, 0.99f)) {
+                AsyncImage(thumb(b.imageUrl, 900, 500), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(StoneLight))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))))
+                Pill(
+                    if (old) "⏰ Eat soon · ${age}d" else when (age) { 0L -> "Cooked today"; 1L -> "Cooked yesterday"; else -> "Cooked $age days ago" },
+                    color = if (old) Color.White else Ink, background = if (old) Amber else Color.White, modifier = Modifier.padding(14.dp),
+                )
+                Text(b.title, color = Color.White, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(16.dp))
+            }
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(num(left), style = MaterialTheme.typography.displaySmall)
+                    Text("  of ${num(made)} left · ${kcal(b.kcalPerServing)} each", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                 }
-                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 2.dp)) {
-                    Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("  of ${num(b.cookPortions ?: 0.0)} left · ${kcal(b.kcalPerServing)} each",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+                PortionDots(left, made)
+                Row(Modifier.padding(top = 14.dp)) {
+                    Button(onClick = onAte, enabled = left > 0, colors = ButtonDefaults.buttonColors(containerColor = EmberBright), modifier = Modifier.weight(1f).height(48.dp)) {
+                        Text("Ate one", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(onClick = onToss, modifier = Modifier.weight(1f).height(48.dp)) { Text("Toss the rest", color = Ink, fontWeight = FontWeight.SemiBold) }
                 }
-                if (!upcoming) Row(Modifier.padding(top = 6.dp)) {
-                    Button(onClick = onAte, colors = ButtonDefaults.buttonColors(containerColor = Ink), contentPadding = PaddingValues(horizontal = 14.dp)) { Text("Ate 1 today") }
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = onToss, contentPadding = PaddingValues(horizontal = 14.dp)) { Text("Toss the rest", color = Ink) }
-                }
+            }
+        }
+    }
+}
+
+/** One dot per portion: filled while it's still in the fridge. */
+@Composable
+private fun PortionDots(left: Double, made: Double) {
+    val total = ceil(made).roundToInt().coerceIn(0, 24)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 10.dp)) {
+        repeat(total) { i ->
+            val full = i < left
+            Box(Modifier.size(14.dp).clip(CircleShape).background(if (full) EmberBright else Color.Transparent)
+                .border(2.dp, if (full) EmberBright else StoneLight, CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun ComingRow(b: PlanEntry, modifier: Modifier, open: () -> Unit) {
+    Surface(color = Paper, shape = RoundedCornerShape(20.dp), modifier = modifier.fillMaxWidth().pressable(open, 0.98f)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(thumb(b.imageUrl, 140), null, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(StoneLight))
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(b.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(b.day?.let { "Cooking ${weekdayShort(it)} ${monthDay(it)}" } ?: "In the queue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.titleLarge, color = Amber)
+                Text("for later", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

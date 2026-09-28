@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -13,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
@@ -23,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,12 +54,15 @@ fun SettingsScreen(back: () -> Unit) {
     val context = LocalContext.current
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
 
-    Scaffold(topBar = { TopBar("Settings", back = back, showAccount = false) }, containerColor = Cream) { padding ->
-        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+    val goal by app.prefs.kcalGoal.collectAsState()
+    var editingGoal by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader("Settings", back = back)
+        Column(Modifier.verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp)) {
             SectionLabel("Account")
             Card {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountCircle, null, tint = Stone, modifier = Modifier.size(40.dp))
+                    Avatar(52.dp)
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(me?.name?.ifBlank { null } ?: "Signed in", fontWeight = FontWeight.SemiBold)
                         Text(me?.email.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -79,6 +84,17 @@ fun SettingsScreen(back: () -> Unit) {
                 }
             }
 
+            SectionLabel("Goals")
+            Card {
+                Row(Modifier.fillMaxWidth().pressable({ editingGoal = true }, 0.98f), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Daily calorie goal", fontWeight = FontWeight.SemiBold)
+                        Text("Shown on the Home screen", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("%,d kcal".format(goal), style = MaterialTheme.typography.titleMedium, color = Ember)
+                }
+            }
+
             SectionLabel("App updates")
             UpdatesCard()
 
@@ -88,9 +104,10 @@ fun SettingsScreen(back: () -> Unit) {
                 Text("Recipes, meal plans, batch cooking and groceries.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("© 2026 Devasenan Murugan. All rights reserved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
         }
     }
+    if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { app.prefs.setKcalGoal(it); editingGoal = false }
 }
 
 /** What the updates card is doing. */
@@ -166,13 +183,13 @@ private fun UpdatesCard() {
                         style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { updates.openInstallPermission() }) { Text("Open settings", color = Ink) }
                 }
-                Button(onClick = { updates.install(s.apk) }, enabled = canInstall, colors = ButtonDefaults.buttonColors(containerColor = Ink)) { Text("Install ${release.version}") }
+                Button(onClick = { updates.install(s.apk) }, enabled = canInstall, colors = ButtonDefaults.buttonColors(containerColor = EmberBright)) { Text("Install ${release.version}", fontWeight = FontWeight.Bold) }
             }
             is UpdateStep.Failed -> {
                 Text(s.message, color = Danger, modifier = Modifier.padding(top = 12.dp))
                 Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = Ink), modifier = Modifier.padding(top = 8.dp)) { Text("Try again") }
             }
-            else -> Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = Ink), modifier = Modifier.padding(top = 12.dp)) {
+            else -> Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = EmberBright), modifier = Modifier.padding(top = 12.dp)) {
                 Text("Download and install")
             }
         }
@@ -181,7 +198,7 @@ private fun UpdatesCard() {
 
 @Composable
 private fun Card(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Surface(color = Color.White, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), content = content)
+    Surface(color = Paper, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(18.dp), content = content)
     }
 }
