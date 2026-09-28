@@ -83,18 +83,17 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit) {
     }
     LaunchedEffect(Unit) { load() }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding()) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(top = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Profile", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
-                BadgedBox(badge = { if (update != null) Badge(containerColor = C.go) }) {
-                    FloatingCircle(open) { Icon(Icons.Outlined.Settings, "Settings", tint = C.ink) }
-                }
-            }
+    Column(Modifier.fillMaxSize()) {
+    // The same header as every other tab (it keeps clear of the status bar).
+    ScreenHeader("Profile", subtitle = "Your cooking and catalog") {
+        BadgedBox(badge = { if (update != null) Badge(containerColor = C.go) }) {
+            FloatingCircle(open) { Icon(Icons.Outlined.Settings, "Settings", tint = C.ink) }
         }
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding()) {
         // Who you are
         item {
-            Row(Modifier.padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val initial = (me?.name?.ifBlank { null } ?: me?.email ?: "?").first().uppercaseChar().toString()
                 Box(Modifier.size(88.dp).clip(CircleShape).background(C.goSoft), contentAlignment = Alignment.Center) {
                     Text(initial, color = C.goText, fontFamily = Display, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp)
@@ -181,6 +180,8 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit) {
                 }
             }
         }
+    }
+
     }
 
     if (newFolder) NameDialog("New folder", "e.g. Weeknight", "", onDismiss = { newFolder = false }) { name ->
