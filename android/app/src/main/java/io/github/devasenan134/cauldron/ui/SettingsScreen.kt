@@ -54,7 +54,7 @@ fun SettingsScreen(back: () -> Unit) {
     val context = LocalContext.current
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
 
-    val goal by app.prefs.kcalGoal.collectAsState()
+    val goal = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me?.kcalGoal ?: 2200
     var editingGoal by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Settings", back = back)
@@ -107,7 +107,7 @@ fun SettingsScreen(back: () -> Unit) {
             Spacer(Modifier.height(32.dp))
         }
     }
-    if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { app.prefs.setKcalGoal(it); editingGoal = false }
+    if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { kcal -> editingGoal = false; app.scope.launch { runCatching { app.setKcalGoal(kcal) } } }
 }
 
 /** What the updates card is doing. */

@@ -2,12 +2,62 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, sans-serif;
   --color-ink: #1f1b16;
   --color-cream: #faf6f0;
+  --color-paper: #ffffff;
   --color-ember: #c2410c;
-  --color-ember-soft: #fff1e6;
+  --color-ember-bright: #ea580c;
+  --color-ember-soft: #ffeddf;
+  --color-amber-deep: #b45309;
+  --color-amber-soft: #fff7e6;
+  --color-sky-deep: #0369a1;
+  --color-sky-soft: #eaf6fd;
+  --color-sand: #f1ece4;
 }
 
 body {
   @apply bg-cream text-ink antialiased;
+}
+
+/* Headings and big numbers: the app's display face. */
+.font-display {
+  letter-spacing: -0.01em;
+}
+
+/* A press that springs down a little, like the app. */
+@utility press {
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 160ms;
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+/* Soft card lift on hover (desktop). */
+@utility lift {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  @media (hover: hover) {
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -12px rgb(31 27 22 / 0.25);
+    }
+  }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@utility shimmer {
+  background: linear-gradient(90deg, #efe9e0 25%, #f8f4ee 50%, #efe9e0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@utility rise {
+  animation: rise 260ms ease-out both;
 }

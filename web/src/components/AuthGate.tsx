@@ -27,7 +27,7 @@ function SignIn() {
     loadGoogle().then((gid) => {
       if (cancelled || !button.current) return
       gid.initialize({ client_id: clientId, callback: (r) => mutate(r.credential) })
-      gid.renderButton(button.current, { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' })
+      gid.renderButton(button.current, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', width: 280 })
     })
     return () => {
       cancelled = true
@@ -35,18 +35,23 @@ function SignIn() {
   }, [clientId, mutate])
 
   return (
-    <Centered>
-      <div className="text-3xl font-bold tracking-tight">
-        <span className="text-ember">●</span> Cauldron
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-[#2a211a] to-ink px-6 text-center">
+      {/* A warm glow, like embers under the pot. */}
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(234,88,12,0.35),transparent_65%)]" />
+      <div className="relative flex flex-col items-center">
+        <img src="/favicon.svg" alt="" className="h-36 w-36 rounded-[40px] shadow-2xl" />
+        <h1 className="mt-6 font-display text-6xl font-extrabold tracking-tight text-cream">Cauldron</h1>
+        <p className="mt-1 text-lg text-cream/70">Cook once, eat all week.</p>
+        <div className="mt-10 min-h-11">
+          {config.data && !clientId ? (
+            <p className="text-sm text-red-300">Google sign-in isn't configured on the server.</p>
+          ) : (
+            <div ref={button} />
+          )}
+        </div>
+        {signIn.isError && <p className="mt-4 max-w-xs text-sm text-red-300">{friendly(signIn.error)}</p>}
       </div>
-      <p className="text-sm text-stone-600">Recipes, meal plans and groceries. Sign in to continue.</p>
-      {config.data && !clientId ? (
-        <p className="text-sm text-red-700">Google sign-in isn't configured on the server.</p>
-      ) : (
-        <div ref={button} className="min-h-11" />
-      )}
-      {signIn.isError && <p className="max-w-xs text-sm text-red-700">{friendly(signIn.error)}</p>}
-    </Centered>
+    </div>
   )
 }
 

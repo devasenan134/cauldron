@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlmodel import Session, SQLModel
+from sqlmodel import Field, Session, SQLModel
 
 from ..auth import COOKIE, GOOGLE_CLIENT_ID, SESSION_DAYS, AuthError, sign_in, sign_out, verify_google
 from ..db import get_session
@@ -19,11 +19,16 @@ class Me(SQLModel):
     email: str
     name: str
     is_owner: bool
+    kcal_goal: int
     token: str | None = None
 
 
+class MePatch(SQLModel):
+    kcal_goal: int | None = Field(default=None, ge=500, le=10000)
+
+
 def me_out(user: User) -> Me:
-    return Me(email=user.email, name=user.name, is_owner=is_owner(user))
+    return Me(email=user.email, name=user.name, is_owner=is_owner(user), kcal_goal=user.kcal_goal)
 
 
 @router.get("/config")
@@ -45,6 +50,17 @@ def google(body: GoogleIn, response: Response, session: Session = Depends(get_se
 
 @router.get("/me", response_model=Me)
 def me(user: User = Depends(current_user)):
+    return me_out(user)
+
+
+@router.patch("/me", response_model=Me)
+def update_me(body: MePatch, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Your settings, shared by the website and the app."""
+    if body.kcal_goal is not None:
+        user.kcal_goal = body.kcal_goal
+    session.add(user)
+    session.commit()
+    session.refresh(user)
     return me_out(user)
 
 

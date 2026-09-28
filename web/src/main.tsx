@@ -8,6 +8,8 @@ import AuthGate from './components/AuthGate.tsx'
 import Layout from './components/Layout.tsx'
 import './index.css'
 import Fridge from './pages/Fridge.tsx'
+import Home from './pages/Home.tsx'
+import Settings from './pages/Settings.tsx'
 import Grocery from './pages/Grocery.tsx'
 import Planner from './pages/Planner.tsx'
 import RecipeDetail from './pages/RecipeDetail.tsx'
@@ -32,12 +34,14 @@ createRoot(document.getElementById('root')!).render(
         <BrowserRouter>
           <Routes>
             <Route element={<Layout />}>
-              <Route index element={<Navigate to="/recipes" replace />} />
+              <Route index element={<Home />} />
               <Route path="recipes" element={<Recipes />} />
               <Route path="recipes/:id" element={<RecipeDetail />} />
               <Route path="planner" element={<Planner />} />
               <Route path="fridge" element={<Fridge />} />
               <Route path="grocery" element={<Grocery />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
         </BrowserRouter>

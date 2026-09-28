@@ -1,7 +1,5 @@
 package io.github.devasenan134.cauldron.data
 
-import android.content.Context
-import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -66,18 +64,5 @@ class Store(private val api: Api) {
     fun clear() {
         _recipes.value = emptyMap(); _facets.value = null; _recipe.value = emptyMap()
         _plans.value = emptyMap(); _batches.value = null
-    }
-}
-
-/** Settings kept on this phone. */
-class Prefs(context: Context) {
-    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    private val _kcalGoal = MutableStateFlow(prefs.getInt("kcal_goal", 2200))
-    /** Daily calorie goal, for the Home screen. */
-    val kcalGoal: StateFlow<Int> = _kcalGoal
-
-    fun setKcalGoal(kcal: Int) {
-        prefs.edit { putInt("kcal_goal", kcal) }
-        _kcalGoal.value = kcal
     }
 }

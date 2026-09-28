@@ -3,7 +3,6 @@ package io.github.devasenan134.cauldron
 import android.app.Application
 import io.github.devasenan134.cauldron.data.Api
 import io.github.devasenan134.cauldron.data.GroceryRepo
-import io.github.devasenan134.cauldron.data.Prefs
 import io.github.devasenan134.cauldron.data.Store
 import io.github.devasenan134.cauldron.data.Session
 import io.github.devasenan134.cauldron.data.Updates
@@ -26,8 +25,6 @@ class CauldronApp : Application() {
         private set
     lateinit var store: Store
         private set
-    lateinit var prefs: Prefs
-        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -36,7 +33,6 @@ class CauldronApp : Application() {
         grocery = GroceryRepo(api, filesDir)
         updates = Updates(this, api)
         store = Store(api)
-        prefs = Prefs(this)
         scope.launch {
             session.load()
             // Pick up a changed name or owner status; offline is fine, the saved copy stays.
@@ -47,6 +43,9 @@ class CauldronApp : Application() {
             }
         }
     }
+
+    /** The daily calorie goal is saved on the server, so the website shows the same one. */
+    suspend fun setKcalGoal(kcal: Int) = session.updateMe(api.setKcalGoal(kcal))
 
     suspend fun signOutLocally() {
         grocery.clear()

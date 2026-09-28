@@ -49,6 +49,7 @@ import coil3.compose.AsyncImage
 import io.github.devasenan134.cauldron.data.PlanEntry
 import io.github.devasenan134.cauldron.data.Session
 import java.time.LocalTime
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -59,7 +60,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
     val plan = store.plans.collectAsState().value[week]
     val batches by store.batches.collectAsState()
     val grocery by app.grocery.items.collectAsState()
-    val goal by app.prefs.kcalGoal.collectAsState()
+    val goal = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me?.kcalGoal ?: 2200
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
     var editingGoal by remember { mutableStateOf(false) }
 
@@ -131,7 +132,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
         }
     }
 
-    if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { app.prefs.setKcalGoal(it); editingGoal = false }
+    if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { kcal -> editingGoal = false; app.scope.launch { runCatching { app.setKcalGoal(kcal) } } }
 }
 
 private fun greeting(): String = when (LocalTime.now().hour) {

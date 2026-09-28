@@ -12,6 +12,7 @@ class User(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     email: str = Field(unique=True)
     name: str = ""
+    kcal_goal: int = 2200  # daily calorie goal, shown on Home (app and website)
     created_at: datetime = Field(default_factory=now)
 
 

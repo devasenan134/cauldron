@@ -36,3 +36,10 @@ export function dayLabel(s: string): { weekday: string; date: string } {
 export function daysAgo(s: string): number {
   return Math.round((parse(today()).getTime() - parse(s).getTime()) / 86_400_000)
 }
+
+export const weekdayLong = (s: string) => parse(s).toLocaleDateString(undefined, { weekday: 'long' })
+
+export function greeting(): string {
+  const h = new Date().getHours()
+  return h >= 5 && h < 12 ? 'Good morning' : h >= 12 && h < 17 ? 'Good afternoon' : 'Good evening'
+}

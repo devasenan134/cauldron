@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type PlanEntry } from '../api'
 import { dayLabel, daysAgo, today } from '../dates'
-import { Button, kcal, thumb } from '../components/ui'
+import { Button, Empty, PageHeader, Pill, SectionTitle, Shimmer } from '../components/ui'
+import { kcal, num, plural, thumb } from '../format'
 import { refreshPlan } from '../plan'
 
 // Cooked food keeps about 3–4 days in the fridge.
@@ -15,33 +16,35 @@ export default function Fridge() {
   const portions = cooked.reduce((s, b) => s + (b.portions_left ?? 0), 0)
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h1 className="text-lg font-semibold">
-          In the fridge
-          {cooked.length > 0 && <span className="ml-3 text-sm font-normal text-stone-500">{portions} {portions === 1 ? 'portion' : 'portions'}</span>}
-        </h1>
-        <p className="mb-4 text-sm text-stone-500">
-          Batches you've cooked with portions left over (after the leftovers you've already planned).
-        </p>
-        {batches.isError && <p className="text-red-700">Couldn't load batches: {String(batches.error)}</p>}
-        {batches.data && cooked.length === 0 && (
-          <p className="rounded-xl bg-white p-4 text-sm text-stone-500 ring-1 ring-stone-200">
-            Nothing yet. Plan a meal with “cook” more than “eat” (or “+ batch cook” on the planner), and once its day
-            comes the rest shows up here.
-          </p>
-        )}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {cooked.map((b) => <BatchCard key={b.id} batch={b} />)}
-        </div>
-      </section>
+    <div className="rise">
+      <PageHeader title="Fridge" subtitle={cooked.length ? `${plural(portions, 'portion')} ready to eat` : 'Batch cooking'} />
+      {batches.isError && <p className="text-red-700">Couldn't load batches: {String(batches.error)}</p>}
+      {batches.isPending && <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map((i) => <Shimmer key={i} className="h-96 rounded-[28px]" />)}</div>}
+      {batches.data && cooked.length === 0 && (
+        <Empty emoji="🥡" title="Nothing in the fridge"
+          body="Plan a meal that cooks more than you eat (or use “Batch cook” on a planned meal). Once its day comes, the rest shows up here." />
+      )}
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {cooked.map((b) => <BatchCard key={b.id} batch={b} />)}
+      </div>
 
       {planned.length > 0 && (
         <section>
-          <h2 className="mb-1 text-lg font-semibold">Coming up</h2>
-          <p className="mb-4 text-sm text-stone-500">Batches on the plan that haven't been cooked yet.</p>
+          <SectionTitle>Coming up</SectionTitle>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {planned.map((b) => <BatchCard key={b.id} batch={b} upcoming />)}
+            {planned.map((b) => (
+              <Link key={b.id} to={`/recipes/${b.recipe_id}`} className="press lift flex items-center gap-3 rounded-3xl bg-paper p-3">
+                <img src={thumb(b.image_url, 140)} alt="" className="h-14 w-14 rounded-2xl bg-sand object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{b.title}</p>
+                  <p className="text-sm text-stone-500">{b.day ? `Cooking ${dayLabel(b.day).weekday} ${dayLabel(b.day).date}` : 'In the queue'}</p>
+                </div>
+                <div className="text-center">
+                  <p className="font-display text-2xl font-bold text-amber-deep">{num(b.portions_left ?? 0)}</p>
+                  <p className="text-[10px] text-stone-500">for later</p>
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
       )}
@@ -49,45 +52,54 @@ export default function Fridge() {
   )
 }
 
-function BatchCard({ batch, upcoming }: { batch: PlanEntry; upcoming?: boolean }) {
+function BatchCard({ batch: b }: { batch: PlanEntry }) {
   const qc = useQueryClient()
-  const refresh = () => refreshPlan(qc)
+  // Show the change at once; the server's answer follows.
+  const optimistic = (change: (e: PlanEntry) => PlanEntry) =>
+    qc.setQueryData<PlanEntry[]>(['batches'], (list) => list?.map((e) => (e.id === b.id ? change(e) : e)))
   const eat = useMutation({
-    mutationFn: () => api.addEntry({ day: today(), leftover_of: batch.id, servings: 1 }),
-    onSettled: refresh,
+    mutationFn: () => api.addEntry({ day: today(), leftover_of: b.id, servings: 1 }),
+    onMutate: () => optimistic((e) => ({ ...e, portions_left: (e.portions_left ?? 0) - 1 })),
+    onSettled: () => refreshPlan(qc),
   })
   const toss = useMutation({
-    mutationFn: () => api.updateEntry(batch.id, { discarded: batch.discarded + (batch.portions_left ?? 0) }),
-    onSettled: refresh,
+    mutationFn: () => api.updateEntry(b.id, { discarded: b.discarded + (b.portions_left ?? 0) }),
+    onMutate: () => optimistic((e) => ({ ...e, portions_left: 0 })),
+    onSettled: () => refreshPlan(qc),
   })
-  const age = batch.day ? daysAgo(batch.day) : null
-  const old = !upcoming && age != null && age >= EAT_SOON_DAYS
+  const age = daysAgo(b.day!)
+  const old = age >= EAT_SOON_DAYS
+  const left = b.portions_left ?? 0
+  const made = b.cook_portions ?? 0
 
   return (
-    <div className={`flex gap-3 rounded-xl bg-white p-3 ring-1 ${old ? 'ring-amber-300' : 'ring-stone-200'}`}>
-      {batch.image_url && <img src={thumb(batch.image_url, 160)} alt="" className="h-20 w-20 shrink-0 rounded-lg object-cover" />}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Link to={`/recipes/${batch.recipe_id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-ember">
-          {batch.title}
-        </Link>
-        <div className="mt-0.5 text-xs text-stone-500">
-          {upcoming
-            ? batch.day ? `cooking ${dayLabel(batch.day).weekday} ${dayLabel(batch.day).date}` : 'in the queue'
-            : age === 0 ? 'cooked today' : age === 1 ? 'cooked yesterday' : `cooked ${age} days ago`}
-          {old && <span className="ml-1 font-medium text-amber-700">· eat soon</span>}
+    <div className="lift overflow-hidden rounded-[28px] bg-paper">
+      <Link to={`/recipes/${b.recipe_id}`} className="relative block h-48">
+        {b.image_url && <img src={thumb(b.image_url, 900, 500)} alt="" className="h-full w-full object-cover" />}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent from-40% to-black/75" />
+        <Pill tone={old ? 'amber' : 'paper'} className="absolute left-4 top-4">
+          {old ? `⏰ Eat soon · ${age}d` : age === 0 ? 'Cooked today' : age === 1 ? 'Cooked yesterday' : `Cooked ${age} days ago`}
+        </Pill>
+        <h3 className="absolute inset-x-4 bottom-4 line-clamp-2 font-display text-2xl font-bold text-white">{b.title}</h3>
+      </Link>
+      <div className="p-5">
+        <p className="flex items-baseline gap-2">
+          <span className="font-display text-5xl font-extrabold">{num(left)}</span>
+          <span className="text-stone-500">of {num(made)} left · {kcal(b.kcal_per_serving)} each</span>
+        </p>
+        {/* One dot per portion: filled while it's still in the fridge. */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {Array.from({ length: Math.min(24, Math.ceil(made)) }, (_, i) => (
+            <span key={i} className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${i < left ? 'border-ember-bright bg-ember-bright' : 'border-stone-200'}`} />
+          ))}
         </div>
-        <div className="mt-1 flex items-baseline gap-2">
-          <span className="text-2xl font-bold tabular-nums">{batch.portions_left}</span>
-          <span className="text-xs text-stone-500">
-            of {batch.cook_portions} left · {kcal(batch.kcal_per_serving)} each
-          </span>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button variant="accent" onClick={() => eat.mutate()} disabled={left <= 0 || eat.isPending}>Ate one</Button>
+          <Button variant="ghost" disabled={toss.isPending}
+            onClick={() => confirm(`Mark the ${plural(left, 'portion')} of ${b.title} left in the fridge as thrown away?`) && toss.mutate()}>
+            Toss the rest
+          </Button>
         </div>
-        {!upcoming && (
-          <div className="mt-2 flex gap-2">
-            <Button onClick={() => eat.mutate()} disabled={eat.isPending}>Ate 1 today</Button>
-            <Button variant="ghost" onClick={() => toss.mutate()} disabled={toss.isPending}>Toss the rest</Button>
-          </div>
-        )}
       </div>
     </div>
   )

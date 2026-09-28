@@ -80,7 +80,9 @@ export type GroceryItem = {
   sources: string[]
 }
 
-export type Me = { email: string; name: string; is_owner: boolean }
+export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number }
+
+export type AppRelease = { version: string; notes: string; size: number }
 
 /** The session is missing or expired; the app shows the sign-in page. */
 export class SignedOut extends Error {}
@@ -108,6 +110,8 @@ export const api = {
   me: () => request<Me>('GET', '/auth/me'),
   signIn: (credential: string) => request<Me>('POST', '/auth/google', { credential }),
   signOut: () => request<{ ok: boolean }>('POST', '/auth/logout'),
+  setKcalGoal: (kcal_goal: number) => request<Me>('PATCH', '/auth/me', { kcal_goal }),
+  appLatest: () => request<AppRelease | null>('GET', '/app/latest'),
 
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
