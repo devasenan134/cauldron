@@ -208,7 +208,6 @@ fun HeaderRow(title: String, subtitle: String) {
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(title, style = MaterialTheme.typography.headlineLarge)
         }
-        Avatar()
     }
 }
 

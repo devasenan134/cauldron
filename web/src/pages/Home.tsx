@@ -18,8 +18,8 @@ export default function Home() {
   const grocery = useQuery({ queryKey: ['grocery'], queryFn: api.grocery })
   const [editingGoal, setEditingGoal] = useState(false)
 
-  const todays = plan.data?.days[today()] ?? []
-  const tomorrows = (nextWeek === week ? plan.data : nextPlan.data)?.days[tomorrow] ?? []
+  const todays = (plan.data?.days[today()] ?? []).filter((e) => e.recipe_id != null || e.leftover_of != null)
+  const tomorrows = ((nextWeek === week ? plan.data : nextPlan.data)?.days[tomorrow] ?? []).filter((e) => e.recipe_id != null || e.leftover_of != null)
   const eaten = todays.reduce((s, e) => s + (e.kcal ?? 0), 0)
   const goal = me?.kcal_goal ?? 2200
   const inFridge = batches.data?.filter((b) => b.day && b.day <= today()) ?? []
@@ -46,8 +46,17 @@ export default function Home() {
         </div>
         <div className="flex flex-col gap-5">
           <CaloriesCard eaten={eaten} goal={goal} onEdit={() => setEditingGoal(true)} />
+          {/* The grocery list lives here now (Profile took its place in the menu). */}
+          <Link to="/grocery" className="press flex items-center gap-4 rounded-3xl bg-ink px-6 py-5 text-cream">
+            <span className="text-2xl">🧺</span>
+            <span className="flex-1">
+              <span className="block font-display text-lg font-bold">Grocery list</span>
+              <span className="text-sm opacity-70">{grocery.data?.length ? (toBuy ? `${plural(toBuy, 'item')} to buy` : 'All bought') : 'Empty: build it from your plan'}</span>
+            </span>
+            <span className="text-xl">→</span>
+          </Link>
           <div className="grid grid-cols-2 gap-4">
-            <Tile to="/grocery" emoji="🛒" title={toBuy ? `${toBuy} to buy` : 'All bought'} sub="Grocery list" />
+            <Tile to="/fridge" emoji="🥡" title={plural(inFridge.reduce((s, b) => s + (b.portions_left ?? 0), 0), 'portion')} sub="in the fridge" />
             <Tile to="/planner" emoji="📅" title={plural(weekEntries.length, 'meal')} sub={`${kcal(weekKcal)} this week`} />
           </div>
         </div>

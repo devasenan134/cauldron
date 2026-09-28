@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type Ingredient, type RecipeDetail as Recipe } from '../api'
 import { today } from '../dates'
 import { refreshPlan } from '../plan'
@@ -42,10 +42,14 @@ export default function RecipeDetail() {
     <div className="rise">
       <div className="mb-4 flex items-center justify-between">
         <Link to="/recipes" className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">← Recipes</Link>
-        {/* Your own recipes can be rewritten. */}
-        {r.can_edit && r.source !== 'cookwell' && (
-          <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
-        )}
+        <div className="flex items-center gap-2">
+          <FavoriteButton r={r} />
+          <FolderButton r={r} />
+          {/* Your own recipes can be rewritten. */}
+          {r.can_edit && r.source !== 'cookwell' && (
+            <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
+          )}
+        </div>
       </div>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -67,6 +71,14 @@ export default function RecipeDetail() {
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {r.video_url && <a href={r.video_url} target="_blank" rel="noreferrer"><Button variant="soft">▶ Watch video</Button></a>}
             {r.source_url && <a className="text-sm text-stone-500 hover:underline" href={r.source_url} target="_blank" rel="noreferrer">Original{r.author ? ` by ${r.author}` : ''}</a>}
+          </div>
+          {/* Variations: where this came from, your versions of it, and a button to make one. */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {r.parent_title && r.parent_id && (
+              <Link to={`/recipes/${r.parent_id}`} className="rounded-full bg-amber-soft px-3 py-1.5 text-sm font-semibold text-amber-deep">↳ Your version of {r.parent_title}</Link>
+            )}
+            {r.variations.map((v) => <Link key={v.id} to={`/recipes/${v.id}`} className="rounded-full bg-paper px-3 py-1.5 text-sm font-semibold ring-1 ring-stone-200">✎ {v.title}</Link>)}
+            <MakeVersion id={r.id} />
           </div>
           <NutritionCard r={r} />
           <AddToPlan r={r} />
@@ -267,4 +279,66 @@ function FoodPicker({ initial, onPick }: { initial: string; onPick: (id: number)
       </ul>
     </div>
   )
+}
+
+function FavoriteButton({ r }: { r: Recipe }) {
+  const qc = useQueryClient()
+  const toggle = useMutation({
+    mutationFn: () => api.setFavorite(r.id, !r.favorite),
+    onMutate: () => qc.setQueryData<Recipe>(['recipe', r.id], { ...r, favorite: !r.favorite }),
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['recipe', r.id] }); qc.invalidateQueries({ queryKey: ['catalog'] }); qc.invalidateQueries({ queryKey: ['profile'] }) },
+  })
+  return (
+    <button onClick={() => toggle.mutate()} aria-label={r.favorite ? 'Unfavorite' : 'Favorite'} title={r.favorite ? 'Unfavorite' : 'Favorite'}
+      className={`press grid h-10 w-10 place-items-center rounded-full bg-paper text-lg ring-1 ring-stone-200 ${r.favorite ? 'text-pink-deep' : ''}`}>
+      {r.favorite ? '♥' : '♡'}
+    </button>
+  )
+}
+
+/** Save to your folders: a small menu with a tick per folder, and "New folder". */
+function FolderButton({ r }: { r: Recipe }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog, enabled: open })
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['recipe', r.id] }); qc.invalidateQueries({ queryKey: ['catalog'] }) }
+  const set = async (folderId: number, on: boolean) => {
+    qc.setQueryData<Recipe>(['recipe', r.id], { ...r, folder_ids: on ? [...r.folder_ids, folderId] : r.folder_ids.filter((x) => x !== folderId) })
+    await api.setInFolder(folderId, r.id, on)
+    refresh()
+  }
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} aria-label="Save to a folder" title="Save to a folder"
+        className="press grid h-10 w-10 place-items-center rounded-full bg-paper text-lg ring-1 ring-stone-200">{r.folder_ids.length ? '🔖' : '📑'}</button>
+      {open && (
+        <div className="rise absolute right-0 z-30 mt-2 w-64 rounded-2xl bg-paper p-2 shadow-2xl ring-1 ring-stone-200">
+          <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-stone-500">Save to a folder</p>
+          {catalog.data?.folders.map((f) => {
+            const on = r.folder_ids.includes(f.id)
+            return (
+              <button key={f.id} onClick={() => set(f.id, !on)} className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left hover:bg-sand">
+                <span className="flex-1 truncate">📁 {f.name}</span>
+                <span className={`grid h-5 w-5 place-items-center rounded-full border-[1.5px] text-xs ${on ? 'border-ink bg-ink text-cream' : 'border-stone-400'}`}>{on && '✓'}</span>
+              </button>
+            )
+          })}
+          <button className="w-full rounded-xl px-2 py-2 text-left font-semibold hover:bg-sand" onClick={async () => {
+            const n = prompt('New folder name')
+            if (n?.trim()) { const f = await api.createFolder(n.trim()); await set(f.id, true) }
+          }}>＋ New folder</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MakeVersion({ id }: { id: number }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const copy = useMutation({
+    mutationFn: () => api.makeVariation(id),
+    onSuccess: ({ id: newId }) => { qc.invalidateQueries({ queryKey: ['recipe', id] }); qc.invalidateQueries({ queryKey: ['catalog'] }); navigate(`/recipes/${newId}/edit`) },
+  })
+  return <Button variant="ghost" onClick={() => copy.mutate()} disabled={copy.isPending}>{copy.isPending ? 'Copying…' : '⧉ Make my version'}</Button>
 }

@@ -108,11 +108,13 @@ def unit_weight(ing: Ingredient, food: Food | None, unit: str) -> float | None:
     name = ing.name.lower()
     portions = food.portions if food else []
     if unit not in ("ingredient", "serving", "a serving"):
-        for p in portions:  # exact unit, e.g. clove, slice
-            if p["unit"].lower().startswith(unit.rstrip("s")):
+        for p in portions:  # exact unit, e.g. clove, slice (not "slice, 1 cup" style measures)
+            u = p["unit"].lower()
+            if u.startswith(unit.rstrip("s")) and "cup" not in u and p["grams"] <= 80:
                 return p["grams"]
     for key, grams in EACH.items():
-        if key in name:
+        # Match at the start of a word: "can" must not match "American cheese".
+        if re.search(r"\b" + re.escape(key), name):
             return grams
     for pref in PORTION_PREF:
         for p in portions:
@@ -121,10 +123,20 @@ def unit_weight(ing: Ingredient, food: Food | None, unit: str) -> float | None:
     return EACH.get(unit.rstrip("s"))
 
 
-def resolve_grams(ing: Ingredient, food: Food | None, grams_per_part: float | None) -> tuple[float | None, str | None]:
+# Counting words that can stand in for the unit ("3-6 cloves" of garlic).
+LABEL_UNITS = {"clove": "clove", "cloves": "clove", "slice": "slice", "slices": "slice", "leaf": "leaf", "leaves": "leaf",
+               "sprig": "sprig", "sprigs": "sprig", "stalk": "stalk", "stalks": "stalk", "can": "can", "cans": "can",
+               "stick": "stick", "sticks": "stick", "sheet": "sheet", "sheets": "sheet"}
+EACH_EXTRA = {"leaf": 0.5, "stick": 113, "sheet": 3}  # basil leaf, butter stick, nori sheet
+
+
+def resolve_grams(ing: Ingredient, food: Food | None, grams_per_part: float | None,
+                  servings: float | None = None) -> tuple[float | None, str | None]:
     unit = (ing.unit or "").lower()
     label = (ing.label or "").strip()
     name = ing.name.lower()
+    if unit in ("", "ingredient") and (m := re.match(r"~?\s*[\d./]+(?:\s*(?:-|to)\s*[\d./]+)?\s*([a-z]+)", label.lower())) and m.group(1) in LABEL_UNITS:
+        unit = LABEL_UNITS[m.group(1)]
     if ing.grams_source == "manual":
         return ing.grams, "manual"
     if ing.grams is not None and ing.grams_source in (None, "given"):
@@ -146,21 +158,112 @@ def resolve_grams(ing: Ingredient, food: Food | None, grams_per_part: float | No
     if unit in VAGUE:
         n = ing.amount if unit.endswith("spoonfuls") and ing.amount else 1
         return round(n * VAGUE[unit], 1), "estimate"
-    if unit in COUNT_UNITS or (not unit and re.match(r"~?\s*\d", label)):
+    if unit in ("serving", "a serving", "servings") and (typical := typical_serving(ing, food)) and typical[0]:
+        return round((count_from_label(label, ing.amount) or 1) * typical[0], 1), "estimate"
+    if unit in COUNT_UNITS or unit in EACH_EXTRA or (not unit and re.match(r"~?\s*\d", label)):
         n = count_from_label(label, ing.amount)
-        each = unit_weight(ing, food, unit or "ingredient")
+        each = unit_weight(ing, food, unit or "ingredient") or EACH_EXTRA.get(unit)
         if n and each:
             return round(n * each, 1), "portion"
+    # No usable amount (blank, "to taste", "for garnish"): a typical amount per serving, as an estimate.
+    if (typical := typical_serving(ing, food)) is not None:
+        grams, per_item = typical
+        each = unit_weight(ing, food, "ingredient") if per_item else None
+        n = servings or 2
+        if per_item and each:
+            return round(n * each, 1), "estimate"
+        if grams:
+            return round(n * grams, 1), "estimate"
     return None, None
 
 
-def grams_per_part(ingredients: list[Ingredient]) -> dict[str | None, float]:
-    """Per component: grams of one 'part', from parts that also state grams."""
-    ratios: dict[str | None, list[float]] = {}
+# Typical grams per serving for toppings and "to taste" amounts (first match wins), and per grocery
+# aisle as a fallback. "item" means one piece per serving (a tortilla, a bun).
+TYPICAL = [
+    ("water", 0), ("ice", 0), ("anchov", 5), ("caper", 3),
+    ("salami", 30), ("soppressata", 30), ("mortadella", 30), ("prosciutto", 25), ("pepperoni", 25), ("ham", 40),
+    ("capicola", 30), ("parmigiano", 8), ("reggiano", 8), ("pecorino", 8), ("grana", 8), ("salt", 1), ("pepper flake", 0.5), ("black pepper", 0.3), ("pepper", 0.3),
+    ("tortilla", "item"), ("bun", "item"), ("roll", "item"), ("pita", "item"), ("naan", "item"), ("bread", "item"),
+    ("sour cream", 30), ("yogurt", 30), ("crema", 20), ("cream", 15), ("parmesan", 8), ("feta", 20), ("queso", 20),
+    ("cheese", 20), ("butter", 7), ("mayo", 10), ("lettuce", 20), ("cabbage", 25), ("slaw", 30), ("pickle", 15),
+    ("tomato", 30), ("onion", 15), ("cilantro", 2), ("parsley", 2), ("basil", 2), ("mint", 2), ("dill", 1),
+    ("herb", 2), ("scallion", 5), ("green onion", 5), ("chive", 2), ("lime", 5), ("lemon", 5), ("avocado", 35),
+    ("guacamole", 30), ("salsa", 30), ("hot sauce", 5), ("sriracha", 5), ("chili crisp", 5), ("sauce", 15),
+    ("oil", 5), ("sesame", 2), ("seed", 3), ("nut", 10), ("honey", 7), ("sugar", 4), ("syrup", 7),
+    ("gnocchi", 150), ("rice", 75), ("pasta", 85), ("noodle", 85), ("potato", 150), ("sausage", 100), ("egg", 50), ("bacon", 15), ("jalape", 8), ("chile", 3), ("chili", 3),
+    ("stock", 60), ("broth", 60), ("vinegar", 5), ("mustard", 5), ("ketchup", 10),
+]
+TYPICAL_AISLE = {"produce": 30, "dairy": 20, "meat": 100, "seafood": 100, "spice": 1, "condiment": 10,
+                 "pantry": 15, "bakery": "item", "bread": "item", "frozen": 50, "canned": 60}
+
+
+def typical_serving(ing: Ingredient, food: Food | None) -> tuple[float | None, bool] | None:
+    """(grams per serving, or None) and whether it's one item per serving."""
+    name = ing.name.lower()
+    for key, v in TYPICAL:
+        if key in name:
+            return (None, True) if v == "item" else (float(v), False)
+    aisle = (ing.aisle or "").lower()
+    for key, v in TYPICAL_AISLE.items():
+        if key in aisle:
+            return (None, True) if v == "item" else (float(v), False)
+    return (10.0, False) if food else None
+
+
+SPICE_WORDS = ("cumin", "paprika", "turmeric", "powder", "coriander", "cinnamon", "oregano", "thyme", "chili",
+               "pepper", "salt", "spice", "masala", "seasoning", "cardamom", "clove", "nutmeg", "sumac", "za'atar",
+               "harissa", "fennel", "mustard seed", "sugar", "msg", "dried")
+
+
+# What a blank-amount ingredient is, to spot alternatives ("sub roll, sesame roll or hoagie").
+PROTEIN_WORDS = ("chicken", "beef", "pork", "lamb", "salmon", "shrimp", "fish", "tofu", "tempeh", "steak", "turkey",
+                 "chorizo", "sausage", "meat", "carnitas", "bison", "venison", "duck", "paneer", "beans")
+
+
+def mark_alternatives(ingredients: list[Ingredient]) -> None:
+    """Within a component, blank-amount breads (or blank-amount proteins) are options: count the first."""
+    seen: set[tuple[str | None, str]] = set()
     for ing in ingredients:
-        if (ing.unit or "").lower() in ("part", "parts") and ing.grams and ing.amount:
-            ratios.setdefault(ing.group, []).append(ing.grams / ing.amount)
-    return {g: sum(r) / len(r) for g, r in ratios.items()}
+        if ing.grams_source != "estimate" or (ing.label or "").strip():
+            continue
+        name = ing.name.lower()
+        kind = ("bread" if any(k in name for k, v in TYPICAL if v == "item" and k in name) or "roll" in name or "hoagie" in name
+                else "protein" if any(w in name for w in PROTEIN_WORDS) else None)
+        if kind is None:
+            continue
+        if (ing.group, kind) in seen:
+            ing.grams, ing.grams_source = None, "alternative"
+        seen.add((ing.group, kind))
+
+
+def grams_per_part(ingredients: list[Ingredient], servings: float | None = None) -> dict[str | None, float]:
+    """Per component: grams of one 'part', from parts that also state grams.
+
+    With nothing to anchor them, parts are estimated: a spice blend at a teaspoon (3 g) per part,
+    anything else so the component comes to about 100 g per serving.
+    """
+    ratios: dict[str | None, list[float]] = {}
+    parts: dict[str | None, list[Ingredient]] = {}
+    for ing in ingredients:
+        if (ing.unit or "").lower() in ("part", "parts") or (ing.label or "").strip().lower().endswith(("part", "parts")):
+            parts.setdefault(ing.group, []).append(ing)
+            if ing.grams and ing.amount and ing.grams_source in (None, "given", "manual"):
+                ratios.setdefault(ing.group, []).append(ing.grams / ing.amount)
+    out = {g: sum(r) / len(r) for g, r in ratios.items()}
+    for g, ings in parts.items():
+        if g in out:
+            continue
+        total = sum(count_from_label(i.label or "", i.amount) or 0 for i in ings)
+        if not total:
+            continue
+        group = (g or "").lower()
+        if all(any(w in i.name.lower() for w in SPICE_WORDS) for i in ings) or any(w in group for w in ("spice", "rub", "seasoning")):
+            out[g] = 3.0
+        elif any(w in group for w in ("dressing", "sauce", "marinade", "vinaigrette", "glaze", "drizzle", "dip", "aioli", "mayo")):
+            out[g] = round(25 * (servings or 2) / total, 1)  # about 25 g of sauce per serving
+        else:
+            out[g] = round(100 * (servings or 2) / total, 1)
+    return out
 
 
 def macros(grams: float | None, food: Food | None) -> dict[str, float] | None:
@@ -175,13 +278,14 @@ def recipe_nutrition(ingredients: list[Ingredient], foods: dict[int, Food], serv
     for ing in ingredients:
         m = macros(ing.grams, foods.get(ing.food_id))
         if m is None:
-            if ing.food_id is not None or ing.grams is not None:
+            if (ing.food_id is not None or ing.grams is not None) and ing.grams_source != "alternative":
                 left_out.append(ing.name)
             continue
         for k in MACROS:
             total[k] += m[k]
         if ing.grams_source == "estimate":
             estimated.append(ing.name)
+    # (grams_source "alternative": another option for an ingredient already counted; left out quietly.)
     total = {k: round(v, 1) for k, v in total.items()}
     per_serving = {k: round(v / servings, 1) for k, v in total.items()} if servings else None
     return {"total": total, "per_serving": per_serving, "left_out": left_out, "estimated": estimated}

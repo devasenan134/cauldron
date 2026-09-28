@@ -40,6 +40,8 @@ class RecipeBase(SQLModel):
 class Recipe(RecipeBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", index=True)
+    # Your variation of another recipe (the original is kept as is).
+    parent_id: int | None = Field(default=None, foreign_key="recipe.id", ondelete="SET NULL", index=True)
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
 
@@ -124,3 +126,34 @@ class AuthSession(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=now)
     expires_at: datetime
+
+
+class Favorite(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    recipe_id: int = Field(foreign_key="recipe.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(default_factory=now)
+
+
+class Folder(SQLModel, table=True):
+    """A collection of recipes in your catalog ("Weeknight", "For guests")."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    name: str
+    created_at: datetime = Field(default_factory=now)
+
+
+class FolderRecipe(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    folder_id: int = Field(foreign_key="folder.id", index=True, ondelete="CASCADE")
+    recipe_id: int = Field(foreign_key="recipe.id", index=True, ondelete="CASCADE")
+    added_at: datetime = Field(default_factory=now)
+
+
+class GroceryTemplate(SQLModel, table=True):
+    """A saved grocery list ("Weekly basics") to add in one go."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    name: str
+    items: list[dict] = Field(default_factory=list, sa_type=JSON)  # [{"name", "amount", "aisle"}]
+    created_at: datetime = Field(default_factory=now)

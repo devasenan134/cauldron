@@ -23,6 +23,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.outlined.ShoppingBasket
+import androidx.compose.material.icons.Icons
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,7 +57,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
-fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
+fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery: () -> Unit) {
     val app = app()
     val store = app.store
     val week = weekStart(today())
@@ -74,8 +78,8 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
     val nextPlan = store.plans.collectAsState().value[nextWeek]
     LaunchedEffect(nextWeek) { if (nextWeek != week) runCatching { store.loadPlan(nextWeek) } }
 
-    val todays = plan?.days?.get(today()).orEmpty()
-    val tomorrows = (if (nextWeek == week) plan else nextPlan)?.days?.get(tomorrow).orEmpty()
+    val todays = plan?.days?.get(today()).orEmpty().filter { !it.isNote }
+    val tomorrows = (if (nextWeek == week) plan else nextPlan)?.days?.get(tomorrow).orEmpty().filter { !it.isNote }
     val eaten = todays.sumOf { it.kcal ?: 0.0 }
     val oldBatches = batches.orEmpty().filter { b -> b.day != null && b.day <= today() }
     val firstName = me?.name?.substringBefore(' ')?.ifBlank { null }
@@ -95,6 +99,23 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
         }
 
         item { CaloriesCard(eaten, goal, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { editingGoal = true } }
+        item {
+            // The grocery list lives here now (Profile took its tab).
+            val toBuy = grocery.count { !it.checked }
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(C.ink)
+                    .pressable(openGrocery, 0.98f).padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.ShoppingBasket, null, tint = C.bg, modifier = Modifier.size(26.dp))
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text("Grocery list", color = C.bg, style = MaterialTheme.typography.titleMedium)
+                    Text(if (grocery.isEmpty()) "Empty: build it from your plan" else if (toBuy == 0) "All bought" else "${plural(toBuy.toDouble(), "item")} to buy",
+                        color = C.bg.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = C.bg)
+            }
+        }
 
         if (todays.size > 1) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
@@ -114,8 +135,8 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
 
         item {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val toBuy = grocery.count { !it.checked }
-                Tile("🛒", if (toBuy == 0) "All bought" else "$toBuy to buy", "Grocery list", Modifier.weight(1f)) { openTab("grocery") }
+                val fridge = batches.orEmpty().filter { b -> b.day != null && b.day <= today() }.sumOf { it.portionsLeft ?: 0.0 }
+                Tile("🥡", plural(fridge, "portion"), "in the fridge", Modifier.weight(1f)) { openTab("fridge") }
                 val weekKcal = plan?.days?.values?.flatten()?.sumOf { it.kcal ?: 0.0 } ?: 0.0
                 val meals = plan?.days?.values?.sumOf { it.size } ?: 0
                 Tile("📅", "$meals meals", "${"%,d".format(weekKcal.roundToInt())} kcal this week", Modifier.weight(1f)) { openTab("plan") }

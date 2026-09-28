@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddShoppingCart
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
@@ -99,6 +101,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
     var moving by remember { mutableStateOf<PlanEntry?>(null) }
     var groceryDialog by remember { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf("day") } // "day" or "week"
+    var noting by remember { mutableStateOf<NoteTarget?>(null) }
 
     val days = (0L until 7L).map { addDays(week, it) }
     // Page 0 is the queue; pages 1..7 are the days.
@@ -111,7 +114,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
         try { block() } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
         store.refreshPlans()
     }
-    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, openRecipe = openRecipe)
+    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, openRecipe = openRecipe, onEditNote = { noting = NoteTarget(it.day, it) })
     val weekKcal = plan?.days?.values?.flatten()?.sumOf { it.kcal ?: 0.0 } ?: 0.0
 
     Box(Modifier.fillMaxSize()) {
@@ -129,11 +132,11 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
                     if (view == "week") {
                         WeekList(p, days, actions,
                             openDay = { i -> view = "day"; scope.launch { pager.scrollToPage(i) } },
-                            onAdd = { day -> adding = day; addingOpen = true })
+                            onAdd = { day -> adding = day; addingOpen = true }, onNote = { day -> noting = NoteTarget(day, null) })
                     } else HorizontalPager(pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                         val day = if (page == QUEUE_PAGE) null else days[page - 1]
                         val entries = if (day == null) p.queue else p.days[day].orEmpty()
-                        DayPage(day, entries, actions, onAdd = { adding = day; addingOpen = true })
+                        DayPage(day, entries, actions, onAdd = { adding = day; addingOpen = true }, onNote = { noting = NoteTarget(day, null) })
                     }
                 }
             }
@@ -141,6 +144,17 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = LocalBottomSpace.current + 16.dp))
     }
 
+    noting?.let { t ->
+        NoteDialog(t.entry?.title ?: "", isNew = t.entry == null, onDismiss = { noting = null }, onDelete = t.entry?.let { e -> { noting = null; actions.remove(e) } }) { text ->
+            noting = null
+            val e = t.entry
+            if (e == null) act { app.api.addEntry(buildJsonObject { put("day", t.day?.let { JsonPrimitive(it) } ?: JsonNull); put("title", text) }) }
+            else {
+                app.store.editEntry(e.id) { it.copy(title = text) }
+                act { app.api.updateEntry(e.id, buildJsonObject { put("title", text) }) }
+            }
+        }
+    }
     if (addingOpen) AddSheet(adding, onDismiss = { addingOpen = false }) { body ->
         addingOpen = false
         act { app.api.addEntry(body) }
@@ -179,7 +193,7 @@ private fun Plan.moveEntry(id: Int, day: String?): Plan {
 /** What a meal card can do. Changes show at once and are then sent to the server. */
 private class PlanActions(
     val app: CauldronApp, val week: String, val act: (suspend () -> Unit) -> Unit,
-    val onMove: (PlanEntry) -> Unit, val openRecipe: (Int) -> Unit,
+    val onMove: (PlanEntry) -> Unit, val openRecipe: (Int) -> Unit, val onEditNote: (PlanEntry) -> Unit,
 ) {
     private fun send(e: PlanEntry, body: JsonObject) = act { app.api.updateEntry(e.id, body) }
 
@@ -243,7 +257,7 @@ private fun DayPill(top: String, big: String, selected: Boolean, today: Boolean,
 }
 
 @Composable
-private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions, onAdd: () -> Unit) {
+private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions, onAdd: () -> Unit, onNote: () -> Unit) {
     val total = entries.sumOf { it.kcal ?: 0.0 }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -260,9 +274,15 @@ private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions
         }
         items(entries, key = { it.id }) { e ->
             val i = entries.indexOf(e)
-            MealCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
+            if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
+            else MealCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
         }
-        item(key = "add") { AddMealButton(onAdd) }
+        item(key = "add") {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) { AddMealButton(onAdd) }
+                AddNoteButton(onNote)
+            }
+        }
     }
 }
 
@@ -283,17 +303,17 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (St
 
 /** The whole week at a glance: each day with its meals as compact rows. */
 @Composable
-private fun WeekList(p: Plan, days: List<String>, actions: PlanActions, openDay: (Int) -> Unit, onAdd: (String?) -> Unit) {
+private fun WeekList(p: Plan, days: List<String>, actions: PlanActions, openDay: (Int) -> Unit, onAdd: (String?) -> Unit, onNote: (String?) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding(top = 4.dp)) {
-        if (p.queue.isNotEmpty()) item(key = "queue") { WeekDay(null, p.queue, actions, { openDay(QUEUE_PAGE) }, { onAdd(null) }) }
+        if (p.queue.isNotEmpty()) item(key = "queue") { WeekDay(null, p.queue, actions, { openDay(QUEUE_PAGE) }, { onAdd(null) }, { onNote(null) }) }
         days.forEachIndexed { i, d ->
-            item(key = d) { WeekDay(d, p.days[d].orEmpty(), actions, { openDay(i + 1) }, { onAdd(d) }) }
+            item(key = d) { WeekDay(d, p.days[d].orEmpty(), actions, { openDay(i + 1) }, { onAdd(d) }, { onNote(d) }) }
         }
     }
 }
 
 @Composable
-private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions, open: () -> Unit, add: () -> Unit) {
+private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions, open: () -> Unit, add: () -> Unit, note: () -> Unit) {
     val total = entries.sumOf { it.kcal ?: 0.0 }
     val isToday = day == today()
     Column(Modifier.padding(top = 14.dp)) {
@@ -302,12 +322,18 @@ private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions
             Text(if (day == null) "  no day yet" else "  ${monthDay(day)}", color = C.muted)
             Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(1.dp).background(C.line))
             if (total > 0) Text("%,d".format(total.roundToInt()), fontFamily = Display, fontWeight = FontWeight.Bold, color = C.goText)
-            Box(Modifier.padding(start = 6.dp).size(32.dp).clip(CircleShape).pressable(add, 0.85f), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(start = 4.dp).size(32.dp).clip(CircleShape).pressable(note, 0.85f), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.EditNote, "Add a note", tint = C.muted, modifier = Modifier.size(20.dp))
+            }
+            Box(Modifier.size(32.dp).clip(CircleShape).pressable(add, 0.85f), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Add, "Add a meal", tint = C.muted, modifier = Modifier.size(20.dp))
             }
         }
         if (entries.isEmpty()) Text("Nothing planned", color = C.faint, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 4.dp))
-        entries.forEachIndexed { i, e -> CompactMeal(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i) }
+        entries.forEachIndexed { i, e ->
+            if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.padding(vertical = 4.dp), compact = true)
+            else CompactMeal(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i)
+        }
     }
 }
 
@@ -346,6 +372,62 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
             }
         }
     }
+}
+
+/** Where a new note goes, or the note being edited. */
+private data class NoteTarget(val day: String?, val entry: PlanEntry?)
+
+@Composable
+private fun AddNoteButton(onClick: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(22.dp)).border(BorderStroke(2.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(22.dp))
+            .pressable(onClick, 0.97f).padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.EditNote, null, tint = C.muted)
+        Text("Note", color = C.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+/** A note on the plan ("Dinner at Priya's", "Defrost the chicken"): tap to edit. */
+@Composable
+private fun NoteCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier, compact: Boolean = false) {
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(if (compact) 14.dp else 20.dp)).background(C.yellowBg)
+            .pressable({ a.onEditNote(e) }, 0.98f).padding(start = 14.dp, top = if (compact) 8.dp else 12.dp, bottom = if (compact) 8.dp else 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.EditNote, null, tint = C.yellowFg)
+        Text(e.title, color = C.ink, modifier = Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.bodyLarge)
+        Box {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for note", tint = C.muted) }
+            DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; a.onEditNote(e) })
+                DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
+                if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
+                if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
+                DropdownMenuItem(text = { Text("Remove", color = C.danger) }, onClick = { menu = false; a.remove(e) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteDialog(initial: String, isNew: Boolean, onDismiss: () -> Unit, onDelete: (() -> Unit)?, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isNew) "Add a note" else "Note") },
+        text = {
+            Column {
+                OutlinedTextField(text, { text = it }, placeholder = { Text("e.g. Dinner at Priya's, defrost the chicken") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                if (onDelete != null) TextButton(onClick = onDelete) { Text("Remove note", color = C.danger) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text("Save", color = C.goText, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

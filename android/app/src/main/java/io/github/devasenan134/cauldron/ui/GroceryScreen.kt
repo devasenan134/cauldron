@@ -29,6 +29,18 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
+import io.github.devasenan134.cauldron.data.GroceryTemplate
+import io.github.devasenan134.cauldron.data.TemplateItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -79,7 +91,7 @@ private fun aisleRank(aisle: String) = AISLE_ORDER.indexOfFirst { aisle.lowercas
 private fun aisleEmoji(aisle: String) = AISLE_EMOJI.entries.firstOrNull { aisle.lowercase().contains(it.key) }?.value ?: "🛒"
 
 @Composable
-fun GroceryScreen(openPlan: () -> Unit) {
+fun GroceryScreen(openPlan: () -> Unit, back: () -> Unit) {
     val app = app()
     val repo = app.grocery
     val scope = rememberCoroutineScope()
@@ -88,6 +100,7 @@ fun GroceryScreen(openPlan: () -> Unit) {
     val online by repo.online.collectAsState()
     var refreshing by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
+    var templatesOpen by remember { mutableStateOf(false) }
     val tick = rememberTick()
 
     suspend fun sync() = try { repo.sync() } catch (_: IOException) { }
@@ -108,7 +121,12 @@ fun GroceryScreen(openPlan: () -> Unit) {
     val progress by animateFloatAsState(if (items.isEmpty()) 0f else done.size.toFloat() / items.size, tween(500), label = "cart")
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Grocery", subtitle = if (items.isEmpty()) "Your list" else "${done.size} of ${items.size} in the cart")
+        ScreenHeader("Grocery", subtitle = if (items.isEmpty()) "Your list" else "${done.size} of ${items.size} in the cart", back = back) {
+            TextButton(onClick = { templatesOpen = true }) {
+                Icon(Icons.AutoMirrored.Outlined.ListAlt, null, tint = C.ink, modifier = Modifier.size(20.dp))
+                Text("  Templates", color = C.ink, fontWeight = FontWeight.SemiBold)
+            }
+        }
         PullToRefreshBox(refreshing, onRefresh = { scope.launch { refreshing = true; sync(); refreshing = false } }) {
             LazyColumn(contentPadding = screenPadding(top = 4.dp), modifier = Modifier.fillMaxSize()) {
                 if (items.isNotEmpty()) item(key = "progress") {
@@ -152,6 +170,7 @@ fun GroceryScreen(openPlan: () -> Unit) {
             }
         }
     }
+    if (templatesOpen) TemplatesSheet(onDismiss = { templatesOpen = false }) { fresh -> scope.launch { repo.replace(fresh) } }
 }
 
 @Composable
@@ -205,4 +224,104 @@ private fun ItemRow(item: GroceryItem, modifier: Modifier, onToggle: () -> Unit,
             if (checked) Icon(Icons.Default.Check, null, tint = C.bg, modifier = Modifier.size(16.dp))
         }
     }
+}
+
+
+/** Saved lists ("Weekly basics"): add one to your list in a tap, or save the current list as one. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TemplatesSheet(onDismiss: () -> Unit, onApplied: (List<GroceryItem>) -> Unit) {
+    val app = app()
+    val scope = rememberCoroutineScope()
+    var templates by remember { mutableStateOf<List<GroceryTemplate>?>(null) }
+    var editing by remember { mutableStateOf<GroceryTemplate?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var savingList by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    suspend fun load() { templates = runCatching { app.api.templates() }.getOrElse { message = it.friendly(); emptyList() } }
+    LaunchedEffect(Unit) { load() }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text("Templates", style = MaterialTheme.typography.headlineSmall)
+            Text("Lists you buy again and again. Add one to your grocery list in a tap.", color = C.muted, style = MaterialTheme.typography.bodySmall)
+            message?.let { Text(it, color = C.goText, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp)) }
+            when (val list = templates) {
+                null -> CircularProgressIndicator(color = C.go, modifier = Modifier.padding(24.dp))
+                else -> {
+                    if (list.isEmpty()) Text("No templates yet.", color = C.muted, modifier = Modifier.padding(vertical = 16.dp))
+                    list.forEach { t ->
+                        Row(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.surface).padding(start = 16.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).pressable({ editing = t }, 0.98f)) {
+                                Text(t.name, fontWeight = FontWeight.SemiBold)
+                                Text(t.items.joinToString(", ") { it.name }.ifEmpty { "Empty" }, color = C.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Button(onClick = {
+                                scope.launch {
+                                    try { onApplied(app.api.applyTemplate(t.id)); message = "Added “${t.name}” to your list" } catch (e: Exception) { message = e.friendly() }
+                                }
+                            }, colors = ButtonDefaults.buttonColors(containerColor = C.ink, contentColor = C.bg), modifier = Modifier.padding(start = 8.dp)) { Text("Add") }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { creating = true }) { Icon(Icons.Default.Add, null, tint = C.ink); Text(" New template", color = C.ink) }
+                OutlinedButton(onClick = { savingList = true }) { Text("Save my list as one", color = C.ink) }
+            }
+        }
+    }
+    if (creating || editing != null) TemplateEditor(editing, onDismiss = { creating = false; editing = null }, onSave = { name, items ->
+        scope.launch {
+            try { app.api.saveTemplate(editing?.id, name, items); creating = false; editing = null; load() } catch (e: Exception) { message = e.friendly() }
+        }
+    }, onDelete = editing?.let { t -> {
+        scope.launch { runCatching { app.api.deleteTemplate(t.id) }; editing = null; load() }
+    } })
+    if (savingList) NameDialog("Save my list as a template", "e.g. Weekly basics", "", onDismiss = { savingList = false }) { name ->
+        savingList = false
+        scope.launch { try { app.api.templateFromList(name); message = "Saved “$name”"; load() } catch (e: Exception) { message = e.friendly() } }
+    }
+}
+
+/** Name plus one item per line ("Milk 1 L"). */
+@Composable
+private fun TemplateEditor(t: GroceryTemplate?, onDismiss: () -> Unit, onSave: (String, List<TemplateItem>) -> Unit, onDelete: (() -> Unit)?) {
+    var name by remember { mutableStateOf(t?.name ?: "") }
+    var lines by remember { mutableStateOf(t?.items?.joinToString("\n") { listOf(it.name, it.amount).filter { s -> s.isNotBlank() }.joinToString(" ") } ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (t == null) "New template" else "Edit template") },
+        text = {
+            Column {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(lines, { lines = it }, label = { Text("Items, one per line") }, placeholder = { Text("Milk 1 L\nEggs 12\nBananas") },
+                    minLines = 5, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete template", color = C.danger) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val items = lines.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { line ->
+                    val m = Regex("""^(.*?)\s+(\d[\d.,/]*\s*\p{L}{0,6})$""").find(line)
+                    if (m != null) TemplateItem(m.groupValues[1], m.groupValues[2]) else TemplateItem(line)
+                }
+                if (name.isNotBlank()) onSave(name.trim(), items)
+            }) { Text("Save", color = C.goText, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+fun NameDialog(title: String, hint: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { OutlinedTextField(text, { text = it }, placeholder = { Text(hint) }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+        confirmButton = { TextButton(onClick = { if (text.isNotBlank()) onSave(text.trim()) }) { Text("Save", color = C.goText, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

@@ -50,6 +50,11 @@ class Nutrition(SQLModel):
 
 class RecipeDetail(RecipeBase):
     can_edit: bool
+    favorite: bool = False
+    folder_ids: list[int] = []
+    parent_id: int | None = None
+    parent_title: str | None = None
+    variations: list[dict] = []  # your versions of this recipe: [{"id", "title"}]
     id: int
     ingredients: list[IngredientOut]
     steps: list[Step]
@@ -111,7 +116,17 @@ def recipe_detail(session: Session, recipe: Recipe, user: User) -> RecipeDetail:
     foods = {f.id: f for f in session.exec(select(Food).where(col(Food.id).in_({i.food_id for i in ingredients if i.food_id})))}
     out = [IngredientOut(**i.model_dump(), food_name=foods[i.food_id].name if i.food_id else None,
                          nutrition=macros(i.grams, foods.get(i.food_id))) for i in ingredients]
-    return RecipeDetail(**recipe.model_dump(), can_edit=can_edit(recipe, user), ingredients=out, steps=steps,
+    from ..models import Favorite, Folder, FolderRecipe
+    parent = session.get(Recipe, recipe.parent_id) if recipe.parent_id else None
+    extra = dict(
+        favorite=session.exec(select(Favorite).where(Favorite.owner_id == user.id, Favorite.recipe_id == recipe.id)).first() is not None,
+        folder_ids=list(session.exec(select(FolderRecipe.folder_id).join(Folder, Folder.id == FolderRecipe.folder_id)
+                                     .where(Folder.owner_id == user.id, FolderRecipe.recipe_id == recipe.id))),
+        parent_title=parent.title if parent and can_see(parent, user) else None,
+        variations=[{"id": v.id, "title": v.title} for v in session.exec(
+            select(Recipe).where(Recipe.parent_id == recipe.id, Recipe.owner_id == user.id))],
+    )
+    return RecipeDetail(**recipe.model_dump(), **extra, can_edit=can_edit(recipe, user), ingredients=out, steps=steps,
                         nutrition=Nutrition(**recipe_nutrition(ingredients, foods, recipe.servings)))
 
 

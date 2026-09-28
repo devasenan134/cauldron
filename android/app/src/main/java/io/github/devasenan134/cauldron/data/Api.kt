@@ -72,6 +72,38 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun patchIngredient(id: Int, patch: JsonObject): RecipeDetail = patch("/ingredients/$id", patch)
     suspend fun foods(q: String): List<Food> = get("/foods", "q" to q)
 
+    // --- profile and catalog
+    suspend fun profile(): Profile = get("/profile")
+    suspend fun cooked(): List<Cooked> = get("/cooked")
+    suspend fun catalog(): Catalog = get("/catalog")
+    suspend fun setFavorite(recipeId: Int, on: Boolean) {
+        if (on) put<JsonElement>("/favorites/$recipeId", JsonObject(emptyMap())) else delete<JsonElement>("/favorites/$recipeId")
+    }
+    suspend fun createFolder(name: String): FolderSummary = post("/folders", buildJsonObject { put("name", name) })
+    suspend fun renameFolder(id: Int, name: String): FolderSummary = patch("/folders/$id", buildJsonObject { put("name", name) })
+    suspend fun deleteFolder(id: Int) { delete<JsonElement>("/folders/$id") }
+    suspend fun folder(id: Int): FolderDetail = get("/folders/$id")
+    suspend fun setInFolder(folderId: Int, recipeId: Int, on: Boolean) {
+        if (on) put<JsonElement>("/folders/$folderId/recipes/$recipeId", JsonObject(emptyMap()))
+        else delete<JsonElement>("/folders/$folderId/recipes/$recipeId")
+    }
+    /** Copies the recipe as your own; returns the copy's id. */
+    suspend fun makeVariation(recipeId: Int): Int =
+        (post<JsonObject>("/recipes/$recipeId/variation", JsonObject(emptyMap()))["id"].toString()).toInt()
+
+    // --- grocery templates
+    suspend fun templates(): List<GroceryTemplate> = get("/grocery/templates")
+    suspend fun saveTemplate(id: Int?, name: String, items: List<TemplateItem>): GroceryTemplate {
+        val body = buildJsonObject {
+            put("name", name)
+            put("items", json.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(TemplateItem.serializer()), items))
+        }
+        return if (id == null) post("/grocery/templates", body) else put("/grocery/templates/$id", body)
+    }
+    suspend fun templateFromList(name: String): GroceryTemplate = post("/grocery/templates/from-list", buildJsonObject { put("name", name) })
+    suspend fun deleteTemplate(id: Int) { delete<JsonElement>("/grocery/templates/$id") }
+    suspend fun applyTemplate(id: Int): List<GroceryItem> = post("/grocery/templates/$id/apply", JsonObject(emptyMap()))
+
     // --- planner
     suspend fun plan(start: String, days: Int = 7): Plan = get("/plan", "start" to start, "days" to days.toString())
     suspend fun addEntry(body: JsonObject): PlanEntry = post("/plan", body)

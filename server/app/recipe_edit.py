@@ -12,7 +12,7 @@ from sqlmodel import Session, SQLModel, col, delete, select
 from .foodlink import ensure_custom_foods, food_index
 from .foodmap import FOOD_FOR
 from .models import Food, Ingredient, Recipe, Step, now
-from .nutrition import VAGUE, grams_per_part, resolve_grams
+from .nutrition import VAGUE, grams_per_part, mark_alternatives, resolve_grams
 
 
 class IngredientIn(SQLModel):
@@ -103,16 +103,21 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
         ing = Ingredient(recipe_id=recipe.id, position=pos, group=(i.group or "").strip() or None, name=i.name.strip(),
                          note=i.note.strip(), label=i.label.strip(), amount=amount, unit=unit)
         prev = old.get((ing.name.lower(), ing.label.lower()))
-        if prev and prev.grams_source == "manual":
-            ing.grams, ing.grams_source = prev.grams, "manual"
+        if prev:
+            # Unchanged ingredient: keep how it was read (a copied library recipe keeps its exact weights).
+            ing.amount, ing.unit = prev.amount, prev.unit
+            if prev.grams_source in ("manual", "given"):
+                ing.grams, ing.grams_source = prev.grams, prev.grams_source
         ing.food_id = prev.food_id if prev and prev.food_id else (f.id if (f := guess_food(session, ing.name, index)) else None)
         ing.aisle = prev.aisle if prev else None
         ings.append(ing)
     by_id = {f.id: f for f in session.exec(select(Food).where(col(Food.id).in_({i.food_id for i in ings if i.food_id})))}
-    per_part = grams_per_part(ings)
+    per_part = grams_per_part(ings, recipe.servings)
     for ing in ings:
-        ing.grams, ing.grams_source = resolve_grams(ing, by_id.get(ing.food_id), per_part.get(ing.group))
         ing.aisle = ing.aisle or aisle_for(by_id.get(ing.food_id))
+        ing.grams, ing.grams_source = resolve_grams(ing, by_id.get(ing.food_id), per_part.get(ing.group), recipe.servings)
+    mark_alternatives(ings)
+    for ing in ings:
         session.add(ing)
     for pos, s in enumerate(x for x in body.steps if x.text.strip()):
         session.add(Step(recipe_id=recipe.id, position=pos, title=s.title.strip(), text=s.text.strip()))

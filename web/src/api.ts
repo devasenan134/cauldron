@@ -31,6 +31,11 @@ export type Ingredient = {
 export type Step = { id: number; position: number; title: string; text: string }
 
 export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
+  favorite: boolean
+  folder_ids: number[]
+  parent_id: number | null
+  parent_title: string | null
+  variations: { id: number; title: string }[]
   can_edit: boolean
   slug: string
   source_url: string | null
@@ -83,6 +88,16 @@ export type GroceryItem = {
 export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number; theme: 'system' | 'light' | 'dark' }
 
 export type AppRelease = { version: string; notes: string; size: number }
+
+export type Profile = {
+  cooked: number; recipes_cooked: number; mine: number; favorites: number; streak: number
+  days: Record<string, number>; cuisines: [string, number][]; categories: [string, number][]
+}
+export type Cooked = { day: string; entry_id: number; servings: number; batch: number | null; recipe: RecipeSummary }
+export type FolderSummary = { id: number; name: string; count: number; covers: string[] }
+export type Catalog = { mine: RecipeSummary[]; favorites: RecipeSummary[]; folders: FolderSummary[] }
+export type TemplateItem = { name: string; amount: string; aisle: string }
+export type GroceryTemplate = { id: number; name: string; items: TemplateItem[] }
 
 export type TagGroup = { name: string; tags: string[] }
 export type Facets = { cuisines: string[]; categories: string[]; tag_groups: TagGroup[] }
@@ -173,6 +188,23 @@ export const api = {
     if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`)
     return ((await res.json()) as { url: string }).url
   },
+  profile: () => request<Profile>('GET', '/profile'),
+  cooked: () => request<Cooked[]>('GET', '/cooked'),
+  catalog: () => request<Catalog>('GET', '/catalog'),
+  setFavorite: (id: number, on: boolean) => request<{ ok: boolean }>(on ? 'PUT' : 'DELETE', `/favorites/${id}`),
+  createFolder: (name: string) => request<FolderSummary>('POST', '/folders', { name }),
+  renameFolder: (id: number, name: string) => request<FolderSummary>('PATCH', `/folders/${id}`, { name }),
+  deleteFolder: (id: number) => request<{ ok: boolean }>('DELETE', `/folders/${id}`),
+  folder: (id: number) => request<{ id: number; name: string; recipes: RecipeSummary[] }>('GET', `/folders/${id}`),
+  setInFolder: (folderId: number, recipeId: number, on: boolean) =>
+    request<{ ok: boolean }>(on ? 'PUT' : 'DELETE', `/folders/${folderId}/recipes/${recipeId}`),
+  makeVariation: (id: number) => request<{ id: number }>('POST', `/recipes/${id}/variation`),
+  templates: () => request<GroceryTemplate[]>('GET', '/grocery/templates'),
+  saveTemplate: (id: number | null, name: string, items: Partial<TemplateItem>[]) =>
+    id == null ? request<GroceryTemplate>('POST', '/grocery/templates', { name, items }) : request<GroceryTemplate>('PUT', `/grocery/templates/${id}`, { name, items }),
+  templateFromList: (name: string) => request<GroceryTemplate>('POST', '/grocery/templates/from-list', { name }),
+  deleteTemplate: (id: number) => request<{ ok: boolean }>('DELETE', `/grocery/templates/${id}`),
+  applyTemplate: (id: number) => request<GroceryItem[]>('POST', `/grocery/templates/${id}/apply`),
   appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),

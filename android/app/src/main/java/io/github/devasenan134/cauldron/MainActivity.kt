@@ -1,6 +1,16 @@
 package io.github.devasenan134.cauldron
 
 import android.os.Bundle
+import io.github.devasenan134.cauldron.ui.FolderScreen
+import io.github.devasenan134.cauldron.ui.ProfileScreen
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NamedNavArgument
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.AnimatedContentScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,7 +34,6 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Kitchen
-import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
@@ -96,14 +105,14 @@ private object Routes {
     const val RECIPES = "recipes"
     const val PLAN = "plan"
     const val FRIDGE = "fridge"
+    const val PROFILE = "profile"
     const val GROCERY = "grocery"
     const val SETTINGS = "settings"
     const val NEW_RECIPE = "recipe/new"
     fun recipe(id: Int) = "recipe/$id"
     fun editRecipe(id: Int) = "recipe/$id/edit"
-
-    /** Pages that slide in over the tabs (and slide away on back). */
-    fun isDetail(route: String?) = route != null && (route.startsWith("recipe/") || route == SETTINGS)
+    fun folder(id: Int) = "folder/$id"
+    val TABS = setOf(HOME, RECIPES, PLAN, FRIDGE, PROFILE)
 }
 
 private const val SLIDE_MS = 320
@@ -114,68 +123,83 @@ private fun NavHostController.tab(route: String) = navigate(route) {
     restoreState = true
 }
 
+/**
+ * How pages move. Every page is drawn on a solid background, so two pages never show through each
+ * other mid-animation (the back swipe used to smear Plan over Home).
+ *
+ * - Opening a page (recipe, grocery, settings…): it slides in from the right over the page below,
+ *   which drifts left a little. Back reverses it; the predictive back gesture scrubs this with your
+ *   finger, so the page follows the swipe and the one below is already there.
+ * - Switching tabs: a quick crossfade. Back from a tab to Home: the tab shrinks and fades away
+ *   (the system's own back look) over Home, which stays put.
+ */
+private fun isPage(route: String?) = route != null && route !in Routes.TABS
+
 @Composable
 private fun AppRoot() {
     val nav = rememberNavController()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val app = app()
-    val toBuy = app.grocery.items.collectAsState().value.count { !it.checked }
+    val update by app.updates.available.collectAsState()
     val tabs = listOf(
         TabItem(Routes.HOME, "Home", Icons.Outlined.Explore),
         TabItem(Routes.RECIPES, "Recipes", Icons.AutoMirrored.Outlined.MenuBook),
         TabItem(Routes.PLAN, "Plan", Icons.Outlined.CalendarMonth),
         TabItem(Routes.FRIDGE, "Fridge", Icons.Outlined.Kitchen),
-        TabItem(Routes.GROCERY, "Grocery", Icons.Outlined.ShoppingBasket, badge = toBuy),
+        TabItem(Routes.PROFILE, "Profile", Icons.Outlined.AccountCircle, dot = update != null),
     )
-    val showBar = route in tabs.map { it.route }
+    val showBar = route in Routes.TABS
     val openRecipe: (Int) -> Unit = { nav.navigate(Routes.recipe(it)) }
+    val openGrocery: () -> Unit = { nav.navigate(Routes.GROCERY) { launchSingleTop = true } }
 
     CompositionLocalProvider(
         LocalOpenSettings provides { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
         LocalBottomSpace provides if (showBar) 72.dp else 0.dp,
     ) {
-        Box(Modifier.fillMaxSize()) {
-            // Detail pages slide in from the right while the page below shifts a little; back (and the
-            // predictive back gesture, which plays this as you swipe) does the reverse. Tabs crossfade.
+        Box(Modifier.fillMaxSize().background(C.bg)) {
             NavHost(
                 nav, startDestination = Routes.HOME, modifier = Modifier.fillMaxSize(),
                 enterTransition = {
-                    if (Routes.isDetail(targetState.destination.route)) slideInHorizontally(tween(SLIDE_MS)) { it }
-                    else fadeIn(tween(200))
+                    if (isPage(targetState.destination.route)) slideInHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { it }
+                    else fadeIn(tween(180))
                 },
                 exitTransition = {
-                    if (Routes.isDetail(targetState.destination.route)) slideOutHorizontally(tween(SLIDE_MS)) { -it / 4 } + fadeOut(tween(SLIDE_MS), 0.6f)
-                    else fadeOut(tween(150))
+                    if (isPage(targetState.destination.route)) slideOutHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { -it / 5 }
+                    else fadeOut(tween(120))
                 },
                 popEnterTransition = {
-                    if (Routes.isDetail(initialState.destination.route)) slideInHorizontally(tween(SLIDE_MS)) { -it / 4 } + fadeIn(tween(SLIDE_MS), 0.6f)
-                    else fadeIn(tween(200))
+                    if (isPage(initialState.destination.route)) slideInHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { -it / 5 }
+                    else EnterTransition.None
                 },
                 popExitTransition = {
-                    if (Routes.isDetail(initialState.destination.route)) slideOutHorizontally(tween(SLIDE_MS)) { it }
-                    else fadeOut(tween(150))
+                    if (isPage(initialState.destination.route)) slideOutHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { it }
+                    else scaleOut(tween(SLIDE_MS), targetScale = 0.9f) + fadeOut(tween(SLIDE_MS))
                 },
             ) {
-                composable(Routes.HOME) {
-                    HomeScreen(openRecipe = openRecipe, openTab = { nav.tab(it) })
-                }
-                composable(Routes.RECIPES) { RecipesScreen(openRecipe = openRecipe, newRecipe = { nav.navigate(Routes.NEW_RECIPE) }) }
-                composable(Routes.NEW_RECIPE) {
+                page(Routes.HOME) { HomeScreen(openRecipe = openRecipe, openTab = { nav.tab(it) }, openGrocery = openGrocery) }
+                page(Routes.RECIPES) { RecipesScreen(openRecipe = openRecipe, newRecipe = { nav.navigate(Routes.NEW_RECIPE) }) }
+                page(Routes.NEW_RECIPE) {
                     RecipeEditorScreen(null, back = { nav.popBackStack() },
                         saved = { id -> nav.navigate(Routes.recipe(id)) { popUpTo(Routes.NEW_RECIPE) { inclusive = true } } }, deleted = {})
                 }
-                composable("recipe/{id}", arguments = listOf(navArgument("id") { type = NavType.IntType })) {
+                page("recipe/{id}", listOf(navArgument("id") { type = NavType.IntType })) {
                     val id = it.arguments!!.getInt("id")
-                    RecipeScreen(id = id, back = { nav.popBackStack() }, openPlan = { nav.tab(Routes.PLAN) }, edit = { nav.navigate(Routes.editRecipe(id)) })
+                    RecipeScreen(id = id, back = { nav.popBackStack() }, openPlan = { nav.tab(Routes.PLAN) },
+                        edit = { nav.navigate(Routes.editRecipe(id)) }, openRecipe = openRecipe,
+                        editNew = { newId -> nav.navigate(Routes.editRecipe(newId)) })
                 }
-                composable("recipe/{id}/edit", arguments = listOf(navArgument("id") { type = NavType.IntType })) {
+                page("recipe/{id}/edit", listOf(navArgument("id") { type = NavType.IntType })) {
                     RecipeEditorScreen(it.arguments!!.getInt("id"), back = { nav.popBackStack() }, saved = { nav.popBackStack() },
                         deleted = { nav.popBackStack(Routes.RECIPES, inclusive = false).let { ok -> if (!ok) nav.tab(Routes.RECIPES) } })
                 }
-                composable(Routes.PLAN) { PlannerScreen(openRecipe = openRecipe, openGrocery = { nav.tab(Routes.GROCERY) }) }
-                composable(Routes.FRIDGE) { FridgeScreen(openRecipe = openRecipe) }
-                composable(Routes.GROCERY) { GroceryScreen(openPlan = { nav.tab(Routes.PLAN) }) }
-                composable(Routes.SETTINGS) { SettingsScreen(back = { nav.popBackStack() }) }
+                page(Routes.PLAN) { PlannerScreen(openRecipe = openRecipe, openGrocery = openGrocery) }
+                page(Routes.FRIDGE) { FridgeScreen(openRecipe = openRecipe) }
+                page(Routes.PROFILE) { ProfileScreen(openRecipe = openRecipe, openFolder = { nav.navigate(Routes.folder(it)) }) }
+                page("folder/{id}", listOf(navArgument("id") { type = NavType.IntType })) {
+                    FolderScreen(it.arguments!!.getInt("id"), back = { nav.popBackStack() }, openRecipe = openRecipe)
+                }
+                page(Routes.GROCERY) { GroceryScreen(openPlan = { nav.tab(Routes.PLAN) }, back = { nav.popBackStack() }) }
+                page(Routes.SETTINGS) { SettingsScreen(back = { nav.popBackStack() }) }
             }
             // Content scrolls under the transparent status bar; keep the clock and icons readable.
             // (A recipe's page has its photo up there and its own bar that turns solid.)
@@ -189,4 +213,12 @@ private fun AppRoot() {
             }
         }
     }
+}
+
+/** A destination drawn on the page colour, so pages never show through each other while animating. */
+private fun NavGraphBuilder.page(
+    route: String, arguments: List<NamedNavArgument> = emptyList(),
+    content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
+) = composable(route, arguments) { entry ->
+    Box(Modifier.fillMaxSize().background(C.bg)) { content(entry) }
 }

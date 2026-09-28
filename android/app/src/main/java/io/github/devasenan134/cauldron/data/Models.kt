@@ -127,6 +127,11 @@ data class RecipeDetail(
     val steps: List<Step> = emptyList(),
     val nutrition: Nutrition,
     val notes: String = "",
+    val favorite: Boolean = false,
+    val folderIds: List<Int> = emptyList(),
+    val parentId: Int? = null,
+    val parentTitle: String? = null,
+    val variations: List<RecipeRef> = emptyList(),
 ) {
     /** Your own recipe (not the shared library): you can rewrite or delete it. */
     val isMine get() = canEdit && source != "cookwell"
@@ -157,6 +162,8 @@ data class PlanEntry(
 ) {
     val isBatch get() = cookPortions != null
     val isLeftover get() = leftoverOf != null
+    /** A note on the plan: text, no recipe. */
+    val isNote get() = recipeId == null && leftoverOf == null
 }
 
 @Serializable
@@ -175,3 +182,37 @@ data class GroceryItem(
 
 @Serializable
 data class AppRelease(val version: String, val notes: String = "", val size: Long = 0)
+
+@Serializable
+data class RecipeRef(val id: Int, val title: String)
+
+@Serializable
+data class Profile(
+    val cooked: Int = 0,
+    val recipesCooked: Int = 0,
+    val mine: Int = 0,
+    val favorites: Int = 0,
+    val streak: Int = 0,
+    /** "YYYY-MM-DD" -> meals cooked that day (last 20 weeks) */
+    val days: Map<String, Int> = emptyMap(),
+    val cuisines: List<List<kotlinx.serialization.json.JsonElement>> = emptyList(),
+    val categories: List<List<kotlinx.serialization.json.JsonElement>> = emptyList(),
+)
+
+@Serializable
+data class Cooked(val day: String, val entryId: Int, val servings: Double, val batch: Double? = null, val recipe: RecipeSummary)
+
+@Serializable
+data class FolderSummary(val id: Int, val name: String, val count: Int, val covers: List<String> = emptyList())
+
+@Serializable
+data class Catalog(val mine: List<RecipeSummary>, val favorites: List<RecipeSummary>, val folders: List<FolderSummary>)
+
+@Serializable
+data class FolderDetail(val id: Int, val name: String, val recipes: List<RecipeSummary>)
+
+@Serializable
+data class TemplateItem(val name: String, val amount: String = "", val aisle: String = "Other")
+
+@Serializable
+data class GroceryTemplate(val id: Int, val name: String, val items: List<TemplateItem>)

@@ -6,7 +6,7 @@ from sqlmodel import Session, SQLModel, col, delete, select
 
 from ..db import get_session
 from ..deps import current_user
-from ..models import GroceryItem, Ingredient, PlanEntry, Recipe, User
+from ..models import GroceryTemplate, GroceryItem, Ingredient, PlanEntry, Recipe, User
 from ..nutrition import count_from_label
 
 router = APIRouter()
@@ -168,3 +168,101 @@ def clear(checked_only: bool = True, session: Session = Depends(get_session), us
     session.exec(stmt)
     session.commit()
     return {"ok": True}
+
+
+# --- templates: saved lists ("Weekly basics") to add in one go
+
+class TemplateItem(SQLModel):
+    name: str
+    amount: str = ""
+    aisle: str = "Other"
+
+
+class TemplateIn(SQLModel):
+    name: str
+    items: list[TemplateItem] = []
+
+
+class TemplateOut(SQLModel):
+    id: int
+    name: str
+    items: list[TemplateItem]
+
+
+def owned_template(session: Session, template_id: int, user: User) -> GroceryTemplate:
+    t = session.get(GroceryTemplate, template_id)
+    if t is None or t.owner_id != user.id:
+        raise HTTPException(404, "template not found")
+    return t
+
+
+def clean(session: Session, items: list[TemplateItem]) -> list[dict]:
+    """Drop blank lines; give items without an aisle one, from the food their name matches."""
+    from ..foodlink import food_index
+    from ..recipe_edit import aisle_for, guess_food
+    index = None
+    out = []
+    for i in items:
+        if not i.name.strip():
+            continue
+        aisle = i.aisle
+        if aisle in ("", "Other"):
+            index = index or food_index(session)
+            aisle = aisle_for(guess_food(session, i.name, index)) or "Other"
+        out.append({"name": i.name.strip(), "amount": i.amount.strip(), "aisle": aisle})
+    return out
+
+
+@router.get("/grocery/templates", response_model=list[TemplateOut])
+def list_templates(session: Session = Depends(get_session), user: User = Depends(current_user)):
+    return session.exec(select(GroceryTemplate).where(GroceryTemplate.owner_id == user.id).order_by(GroceryTemplate.name)).all()
+
+
+@router.post("/grocery/templates", response_model=TemplateOut)
+def create_template(body: TemplateIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    if not body.name.strip():
+        raise HTTPException(400, "a template needs a name")
+    t = GroceryTemplate(owner_id=user.id, name=body.name.strip(), items=clean(session, body.items))
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+    return t
+
+
+@router.post("/grocery/templates/from-list", response_model=TemplateOut)
+def template_from_list(body: TemplateIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Save what's on your list now as a template."""
+    items = session.exec(select(GroceryItem).where(GroceryItem.owner_id == user.id)).all()
+    body.items = [TemplateItem(name=i.name, amount=i.amount, aisle=i.aisle) for i in items]
+    return create_template(body, session, user)
+
+
+@router.put("/grocery/templates/{template_id}", response_model=TemplateOut)
+def update_template(template_id: int, body: TemplateIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    t = owned_template(session, template_id, user)
+    t.name = body.name.strip() or t.name
+    t.items = clean(session, body.items)
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+    return t
+
+
+@router.delete("/grocery/templates/{template_id}")
+def delete_template(template_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    session.delete(owned_template(session, template_id, user))
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/grocery/templates/{template_id}/apply", response_model=list[GroceryItem])
+def apply_template(template_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Add the template's items to your list (skipping ones already on it and not bought yet)."""
+    t = owned_template(session, template_id, user)
+    have = {i.name.lower() for i in session.exec(select(GroceryItem).where(GroceryItem.owner_id == user.id, GroceryItem.checked == False))}  # noqa: E712
+    for item in t.items:
+        if item["name"].lower() not in have:
+            session.add(GroceryItem(owner_id=user.id, name=item["name"], amount=item.get("amount", ""),
+                                    aisle=item.get("aisle") or "Other", manual=True, sources=[t.name]))
+    session.commit()
+    return list_items(session, user)

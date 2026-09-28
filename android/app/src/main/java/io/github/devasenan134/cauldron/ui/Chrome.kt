@@ -83,7 +83,6 @@ fun ScreenHeader(title: String, subtitle: String? = null, back: (() -> Unit)? = 
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         actions()
-        if (back == null) Avatar()
     }
 }
 
@@ -111,7 +110,7 @@ fun FloatingCircle(onClick: () -> Unit, size: Dp = 44.dp, content: @Composable (
     ) { content() }
 }
 
-data class TabItem(val route: String, val label: String, val icon: ImageVector, val badge: Int = 0)
+data class TabItem(val route: String, val label: String, val icon: ImageVector, val badge: Int = 0, val dot: Boolean = false)
 
 /** The bottom bar: flat, a hairline on top, outline icons with their names. */
 @Composable
@@ -130,6 +129,7 @@ private fun TabButton(tab: TabItem, selected: Boolean, modifier: Modifier, onCli
     Column(modifier.fillMaxHeight().pressable(onClick, 0.9f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         BadgedBox(badge = {
             if (tab.badge > 0) Badge(containerColor = C.ink, contentColor = C.bg) { Text("${tab.badge}", fontSize = 10.sp) }
+            else if (tab.dot) Badge(containerColor = C.go)
         }) { Icon(tab.icon, null, tint = fg, modifier = Modifier.size(24.dp)) }
         Text(tab.label, color = fg, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
     }

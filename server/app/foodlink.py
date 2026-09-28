@@ -2,8 +2,8 @@
 from sqlmodel import Session, select
 
 from .foodmap import CUSTOM, FOOD_FOR
-from .models import Food, Ingredient
-from .nutrition import grams_per_part, resolve_grams
+from .models import Food, Ingredient, Recipe
+from .nutrition import grams_per_part, mark_alternatives, resolve_grams
 
 
 def ensure_custom_foods(session: Session) -> None:
@@ -30,10 +30,13 @@ def link_recipe(session: Session, recipe_id: int, index: dict[str, Food], by_id:
     for ing in ings:
         if ing.food_id is None and (target := FOOD_FOR.get(ing.name.lower().strip())):
             ing.food_id = index[target].id
-    per_part = grams_per_part(ings)
+    servings = session.get(Recipe, recipe_id).servings
+    per_part = grams_per_part(ings, servings)
     for ing in ings:
         food = by_id.get(ing.food_id) if ing.food_id else None
-        ing.grams, ing.grams_source = resolve_grams(ing, food, per_part.get(ing.group))
+        ing.grams, ing.grams_source = resolve_grams(ing, food, per_part.get(ing.group), servings)
+    mark_alternatives(ings)
+    for ing in ings:
         session.add(ing)
 
 

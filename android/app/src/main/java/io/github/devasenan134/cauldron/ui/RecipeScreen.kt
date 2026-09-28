@@ -31,6 +31,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Schedule
@@ -100,7 +109,7 @@ private val SOURCE_NOTE = mapOf(
 private val HERO = 380.dp
 
 @Composable
-fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Unit) {
+fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Unit, openRecipe: (Int) -> Unit = {}, editNew: (Int) -> Unit = {}) {
     val app = app()
     val store = app.store
     val scope = rememberCoroutineScope()
@@ -110,6 +119,19 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
     var editing by remember { mutableStateOf<Ingredient?>(null) }
     var pickingFood by remember { mutableStateOf<Ingredient?>(null) }
     var adding by remember { mutableStateOf(false) }
+    var foldering by remember { mutableStateOf(false) }
+    var copying by remember { mutableStateOf(false) }
+    fun toggleFavorite(r: RecipeDetail) {
+        store.putRecipe(r.copy(favorite = !r.favorite)) // at once
+        scope.launch { runCatching { app.api.setFavorite(r.id, !r.favorite) }.onFailure { store.putRecipe(r); snackbar.showSnackbar(it.friendly()) } }
+    }
+    fun makeVersion(r: RecipeDetail) {
+        copying = true
+        scope.launch {
+            try { val newId = app.api.makeVariation(r.id); store.recipesChanged(); editNew(newId) }
+            catch (e: Exception) { snackbar.showSnackbar(e.friendly()) } finally { copying = false }
+        }
+    }
     val list = rememberLazyListState()
 
     fun patch(ing: Ingredient, body: JsonObject) = scope.launch {
@@ -150,6 +172,19 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                         if (r.notes.isNotBlank()) Text("📝  ${r.notes}", style = MaterialTheme.typography.bodyMedium, color = C.muted,
                             modifier = Modifier.padding(top = 10.dp).fillMaxWidth().background(C.surfaceAlt, RoundedCornerShape(14.dp)).padding(12.dp))
                         Links(r)
+                        // Variations: where this came from, your versions of it, and a button to make one.
+                        r.parentTitle?.let { t ->
+                            Text("↳ Your version of $t", color = C.purpleFg, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(50)).background(C.purpleBg)
+                                    .pressable({ r.parentId?.let(openRecipe) }, 0.97f).padding(horizontal = 12.dp, vertical = 6.dp))
+                        }
+                        if (r.variations.isNotEmpty()) FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            r.variations.forEach { v -> Chip("✎ ${v.title}", false) { openRecipe(v.id) } }
+                        }
+                        OutlinedButton(onClick = { makeVersion(r) }, enabled = !copying, modifier = Modifier.padding(top = 12.dp)) {
+                            Icon(Icons.Outlined.ContentCopy, null, tint = C.ink, modifier = Modifier.size(18.dp))
+                            Text(if (copying) "  Copying…" else "  Make my version", color = C.ink, fontWeight = FontWeight.SemiBold)
+                        }
                         NutritionCard(r)
                     }
                 }
@@ -215,7 +250,18 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
             Text(recipe?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(start = 12.dp).graphicsLayer { alpha = barAlpha })
             // Your own recipes can be rewritten.
-            if (recipe?.isMine == true) FloatingCircle(edit) { Icon(Icons.Default.Edit, "Edit recipe", tint = C.ink) }
+            recipe?.let { r ->
+                FloatingCircle({ toggleFavorite(r) }) {
+                    Icon(if (r.favorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, if (r.favorite) "Unfavorite" else "Favorite",
+                        tint = if (r.favorite) C.pinkFg else C.ink)
+                }
+                Spacer(Modifier.width(8.dp))
+                FloatingCircle({ foldering = true }) {
+                    Icon(if (r.folderIds.isNotEmpty()) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, "Save to a folder", tint = C.ink)
+                }
+                // Your own recipes can be rewritten.
+                if (r.isMine) { Spacer(Modifier.width(8.dp)); FloatingCircle(edit) { Icon(Icons.Default.Edit, "Edit recipe", tint = C.ink) } }
+            }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 80.dp))
     }
@@ -230,6 +276,48 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
         FoodSheet(ing.name, onDismiss = { pickingFood = null }) { food ->
             pickingFood = null
             patch(ing, buildJsonObject { put("food_id", food.id) })
+        }
+    }
+    if (foldering) recipe?.let { r -> FolderSheet(r, onDismiss = { foldering = false }) { store.putRecipe(it) } }
+}
+
+/** Save a recipe to your folders (tick them), or make a new folder for it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FolderSheet(r: RecipeDetail, onDismiss: () -> Unit, changed: (RecipeDetail) -> Unit) {
+    val app = app()
+    val scope = rememberCoroutineScope()
+    var folders by remember { mutableStateOf<List<io.github.devasenan134.cauldron.data.FolderSummary>?>(null) }
+    var inIds by remember { mutableStateOf(r.folderIds.toSet()) }
+    var creating by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { folders = runCatching { app.api.catalog().folders }.getOrDefault(emptyList()) }
+    fun set(folderId: Int, on: Boolean) {
+        inIds = if (on) inIds + folderId else inIds - folderId
+        changed(r.copy(folderIds = inIds.toList()))
+        scope.launch { runCatching { app.api.setInFolder(folderId, r.id, on) } }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text("Save to a folder", style = MaterialTheme.typography.headlineSmall)
+            Text(r.title, color = C.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            folders?.forEach { f ->
+                val on = f.id in inIds
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(C.surface).pressable({ set(f.id, !on) }, 0.98f).padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("📁  ${f.name}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Box(Modifier.size(24.dp).clip(CircleShape).background(if (on) C.ink else Color.Transparent).border(1.5.dp, if (on) C.ink else C.faint, CircleShape),
+                        contentAlignment = Alignment.Center) { if (on) Icon(Icons.Default.Check, null, tint = C.bg, modifier = Modifier.size(16.dp)) }
+                }
+            }
+            TextButton(onClick = { creating = true }, modifier = Modifier.padding(top = 8.dp)) {
+                Icon(Icons.Default.Add, null, tint = C.ink); Text(" New folder", color = C.ink, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+    if (creating) NameDialog("New folder", "e.g. Weeknight", "", onDismiss = { creating = false }) { name ->
+        creating = false
+        scope.launch {
+            runCatching { app.api.createFolder(name) }.onSuccess { f -> folders = folders.orEmpty() + f; set(f.id, true) }
         }
     }
 }

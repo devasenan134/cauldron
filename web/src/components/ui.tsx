@@ -50,12 +50,12 @@ export function Chip({ children, selected, onClick }: { children: ReactNode; sel
   )
 }
 
-/** Your initial in a dark circle; opens Settings. A dot says an app update is waiting (only the app uses that). */
+/** Your initial in a circle; opens your profile. */
 export function Avatar({ size = 40 }: { size?: number }) {
   const me = useMe().data
   const initial = (me?.name || me?.email || '?').charAt(0).toUpperCase()
   return (
-    <Link to="/settings" title="Settings" aria-label="Settings"
+    <Link to="/profile" title="Profile" aria-label="Profile"
       className="press grid shrink-0 place-items-center rounded-full bg-paper font-display font-bold text-ink shadow-[0_4px_16px_rgba(0,0,0,0.10)] ring-1 ring-stone-200"
       style={{ width: size, height: size, fontSize: size * 0.42 }}>
       {initial}

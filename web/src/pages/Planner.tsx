@@ -233,6 +233,7 @@ function Column({ id, title, subtitle, entries, total, highlight, horizontal, wi
         <div className={horizontal ? 'flex min-h-14 flex-wrap gap-2' : wide ? 'grid min-h-40 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'min-h-28 space-y-2'}>
           {entries.map((e) => <EntryCard key={e.id} entry={e} compact={horizontal} />)}
           {entries.length === 0 && <div className="grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-stone-200 px-2 text-center text-xs text-stone-400">Drop recipes here</div>}
+          <AddNote day={id === QUEUE ? null : id} />
         </div>
       </SortableContext>
     </div>
@@ -274,6 +275,25 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
   }
   const isBatch = entry.cook_portions != null
   const stop = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }
+
+  // A note ("Dinner at Priya's"): text only. Click to edit; drag to move like a meal.
+  if (entry.recipe_id == null && entry.leftover_of == null) {
+    const edit = () => {
+      const t = prompt('Note', entry.title)
+      if (t == null) return
+      if (!t.trim()) { if (confirm('Remove this note?')) remove.mutate(); return }
+      optimistic((e) => ({ ...e, title: t.trim() }))
+      update.mutate({ title: t.trim() })
+    }
+    return (
+      <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
+        className={`group relative cursor-grab touch-manipulation rounded-2xl bg-yellow-soft p-2.5 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
+        <button {...stop} onClick={edit} className="block w-full text-left text-sm text-ink">📝 {entry.title}</button>
+        <button {...stop} onClick={() => remove.mutate()} title="Remove note"
+          className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+      </div>
+    )
+  }
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
@@ -378,5 +398,14 @@ function DraggableRecipe({ recipe }: { recipe: RecipeSummary }) {
       <span className="line-clamp-2 flex-1 text-sm font-semibold leading-tight">{recipe.title}</span>
       {recipe.kcal_per_serving ? <span className="shrink-0 text-xs text-stone-500">{Math.round(recipe.kcal_per_serving)}</span> : null}
     </div>
+  )
+}
+
+function AddNote({ day }: { day: string | null }) {
+  const qc = useQueryClient()
+  const add = useMutation({ mutationFn: (title: string) => api.addEntry({ day, title }), onSettled: () => refreshPlan(qc) })
+  return (
+    <button onClick={() => { const t = prompt('Add a note', ''); if (t?.trim()) add.mutate(t.trim()) }}
+      className="w-full rounded-xl px-2 py-1 text-left text-xs font-semibold text-stone-400 hover:bg-sand hover:text-ink">＋ Note</button>
   )
 }

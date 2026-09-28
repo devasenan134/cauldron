@@ -10,7 +10,7 @@
   --ink: #0a0a0a; --muted: #707070; --faint: #a3a3a3; --line: #e5e5e5;
   --go: #4cc734; --on-go: #ffffff; --go-text: #2f7d1f; --go-soft: #e3f4dc;
   --blue-bg: #dfeaf4; --blue-fg: #2f6694; --purple-bg: #ece6fa; --purple-fg: #6a48c2;
-  --pink-bg: #fae3ec; --pink-fg: #c2386b; --danger: #d92d20;
+  --pink-bg: #fae3ec; --pink-fg: #c2386b; --danger: #d92d20; --yellow-bg: #faf6c8;
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -18,7 +18,7 @@
   --ink: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --line: #27272a;
   --go: #5fd543; --on-go: #0b0b0c; --go-text: #86d96f; --go-soft: #1b2b17;
   --blue-bg: #16263a; --blue-fg: #7fb2e6; --purple-bg: #231d36; --purple-fg: #b59cf5;
-  --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066;
+  --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066; --yellow-bg: #2e2a10;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -27,7 +27,7 @@
     --ink: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --line: #27272a;
     --go: #5fd543; --on-go: #0b0b0c; --go-text: #86d96f; --go-soft: #1b2b17;
     --blue-bg: #16263a; --blue-fg: #7fb2e6; --purple-bg: #231d36; --purple-fg: #b59cf5;
-    --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066;
+    --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066; --yellow-bg: #2e2a10;
     color-scheme: dark;
   }
 }
@@ -50,6 +50,7 @@
   --color-pink-soft: var(--pink-bg);
   --color-on-go: var(--on-go);
   --color-danger: var(--danger);
+  --color-yellow-soft: var(--yellow-bg);
   /* the greys used around the site */
   --color-stone-100: var(--surface-alt);
   --color-stone-200: var(--line);
@@ -107,5 +108,6 @@ body {
   to { opacity: 1; transform: none; }
 }
 @utility rise {
-  animation: rise 260ms ease-out both;
+  /* backwards, not both: once done it leaves no transform, which would trap fixed panels inside the page */
+  animation: rise 260ms ease-out backwards;
 }
