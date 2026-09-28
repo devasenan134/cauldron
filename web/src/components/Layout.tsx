@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { useMe, useSignOut } from '../auth'
 
 const links = [
   { to: '/recipes', label: 'Recipes' },
@@ -7,6 +8,8 @@ const links = [
 ]
 
 export default function Layout() {
+  const me = useMe().data
+  const signOut = useSignOut()
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-cream/90 backdrop-blur">
@@ -29,6 +32,12 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            <span className="hidden text-stone-500 sm:inline">{me?.name || me?.email}</span>
+            <button onClick={() => signOut.mutate()} className="text-stone-600 hover:text-ember">
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">

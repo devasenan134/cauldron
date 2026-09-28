@@ -58,12 +58,14 @@ export default function RecipeDetail() {
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div>
           <h2 className="mb-3 text-xl font-semibold">Ingredients</h2>
-          <p className="mb-3 text-xs text-stone-500">Click a weight to correct it; click a food to change what it's counted as.</p>
+          {r.can_edit && (
+            <p className="mb-3 text-xs text-stone-500">Click a weight to correct it; click a food to change what it's counted as.</p>
+          )}
           {[...groups].map(([group, ings]) => (
             <div key={group} className="mb-5">
               {group && <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">{group}</h3>}
               <ul className="divide-y divide-stone-200 rounded-xl bg-white ring-1 ring-stone-200">
-                {ings.map((ing) => <IngredientRow key={ing.id} ing={ing} recipeId={r.id} />)}
+                {ings.map((ing) => <IngredientRow key={ing.id} ing={ing} recipeId={r.id} editable={r.can_edit} />)}
               </ul>
             </div>
           ))}
@@ -134,7 +136,7 @@ function usePatchIngredient(recipeId: number) {
   })
 }
 
-function IngredientRow({ ing, recipeId }: { ing: Ingredient; recipeId: number }) {
+function IngredientRow({ ing, recipeId, editable }: { ing: Ingredient; recipeId: number; editable: boolean }) {
   const patch = usePatchIngredient(recipeId)
   const [editingGrams, setEditingGrams] = useState(false)
   const [pickingFood, setPickingFood] = useState(false)
@@ -167,19 +169,24 @@ function IngredientRow({ ing, recipeId }: { ing: Ingredient; recipeId: number })
         ) : (
           <button
             onClick={() => setEditingGrams(true)}
+            disabled={!editable}
             title={ing.grams_source ? SOURCE_NOTE[ing.grams_source] : 'not counted: click to add a weight'}
-            className={`shrink-0 rounded px-1.5 tabular-nums hover:bg-stone-100 ${
+            className={`shrink-0 rounded px-1.5 tabular-nums enabled:hover:bg-stone-100 ${
               ing.grams == null ? 'text-amber-700' : ing.grams_source === 'estimate' ? 'text-stone-400 italic' : ''
             }`}
           >
-            {ing.grams == null ? '+ g' : `${Math.round(ing.grams)} g`}
+            {ing.grams == null ? (editable ? '+ g' : '— g') : `${Math.round(ing.grams)} g`}
           </button>
         )}
         <span className="w-16 shrink-0 text-right tabular-nums text-stone-500">
           {ing.nutrition ? Math.round(ing.nutrition.kcal) : '—'}
         </span>
       </div>
-      <button onClick={() => setPickingFood((v) => !v)} className="text-xs text-stone-400 hover:text-ember">
+      <button
+        onClick={() => setPickingFood((v) => !v)}
+        disabled={!editable}
+        className="text-xs text-stone-400 enabled:hover:text-ember"
+      >
         {ing.food_name ?? 'no food linked'}
       </button>
       {pickingFood && (

@@ -2,12 +2,16 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import init_db
-from .routes import grocery, planner, recipes
+from sqlmodel import Session
+
+from .db import engine, init_db
+from .deps import current_user
+from .routes import auth, grocery, planner, recipes
+from .users import claim_placeholder
 
 # Built website (web/dist); served at / when present.
 WEB_DIST = Path(os.environ.get("CAULDRON_WEB", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -16,12 +20,16 @@ WEB_DIST = Path(os.environ.get("CAULDRON_WEB", Path(__file__).resolve().parents[
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    with Session(engine) as session:
+        claim_placeholder(session)
     yield
 
 
 app = FastAPI(title="Cauldron", lifespan=lifespan)
+app.include_router(auth.router, prefix="/api")
+# Everything else needs a signed-in user.
 for module in (recipes, planner, grocery):
-    app.include_router(module.router, prefix="/api")
+    app.include_router(module.router, prefix="/api", dependencies=[Depends(current_user)])
 
 
 @app.get("/api/health")

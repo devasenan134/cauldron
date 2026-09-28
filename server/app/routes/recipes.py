@@ -8,6 +8,9 @@ from ..nutrition import macros, recipe_nutrition
 
 router = APIRouter()
 
+# Recipes from this source form a library every signed-in user can see.
+SHARED_SOURCE = "cookwell"
+
 
 class RecipeSummary(SQLModel):
     id: int
@@ -45,6 +48,7 @@ class Nutrition(SQLModel):
 
 
 class RecipeDetail(RecipeBase):
+    can_edit: bool
     id: int
     ingredients: list[IngredientOut]
     steps: list[Step]
@@ -77,27 +81,43 @@ def nutrition_for(session: Session, recipes: list[Recipe]) -> dict[int, dict]:
     return {r.id: recipe_nutrition(by_recipe.get(r.id, []), foods, r.servings) for r in recipes}
 
 
-def owned_recipe(session: Session, recipe_id: int, user: User) -> Recipe:
+def visible(user: User):
+    """Your own recipes plus the shared Cook Well library."""
+    return or_(Recipe.owner_id == user.id, Recipe.source == SHARED_SOURCE)
+
+
+def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = False) -> Recipe:
+    """A recipe the user may see (or, with edit=True, change); 404 otherwise."""
     recipe = session.get(Recipe, recipe_id)
-    if recipe is None or recipe.owner_id != user.id:
+    if recipe is None or not can_see(recipe, user):
         raise HTTPException(404, "recipe not found")
+    if edit and not can_edit(recipe, user):
+        raise HTTPException(403, "only the owner can edit this recipe")
     return recipe
 
 
-def recipe_detail(session: Session, recipe: Recipe) -> RecipeDetail:
+def can_see(recipe: Recipe, user: User) -> bool:
+    return recipe.owner_id == user.id or recipe.source == SHARED_SOURCE
+
+
+def can_edit(recipe: Recipe, user: User) -> bool:
+    return recipe.owner_id == user.id
+
+
+def recipe_detail(session: Session, recipe: Recipe, user: User) -> RecipeDetail:
     ingredients = session.exec(select(Ingredient).where(Ingredient.recipe_id == recipe.id).order_by(Ingredient.position)).all()
     steps = session.exec(select(Step).where(Step.recipe_id == recipe.id).order_by(Step.position)).all()
     foods = {f.id: f for f in session.exec(select(Food).where(col(Food.id).in_({i.food_id for i in ingredients if i.food_id})))}
     out = [IngredientOut(**i.model_dump(), food_name=foods[i.food_id].name if i.food_id else None,
                          nutrition=macros(i.grams, foods.get(i.food_id))) for i in ingredients]
-    return RecipeDetail(**recipe.model_dump(), ingredients=out, steps=steps,
+    return RecipeDetail(**recipe.model_dump(), can_edit=can_edit(recipe, user), ingredients=out, steps=steps,
                         nutrition=Nutrition(**recipe_nutrition(ingredients, foods, recipe.servings)))
 
 
 @router.get("/recipes", response_model=list[RecipeSummary])
 def list_recipes(q: str | None = None, cuisine: str | None = None, category: str | None = None,
                  session: Session = Depends(get_session), user: User = Depends(current_user)):
-    stmt = select(Recipe).where(Recipe.owner_id == user.id)
+    stmt = select(Recipe).where(visible(user))
     if q:
         like = f"%{q}%"
         in_ingredients = select(Ingredient.recipe_id).where(col(Ingredient.name).ilike(like))
@@ -116,13 +136,13 @@ def list_recipes(q: str | None = None, cuisine: str | None = None, category: str
 def recipe_facets(session: Session = Depends(get_session), user: User = Depends(current_user)):
     """Cuisines and categories in use, for filters."""
     def distinct(column):
-        return sorted(v for v in session.exec(select(column).where(Recipe.owner_id == user.id).distinct()) if v)
+        return sorted(v for v in session.exec(select(column).where(visible(user)).distinct()) if v)
     return {"cuisines": distinct(Recipe.cuisine), "categories": distinct(Recipe.category)}
 
 
 @router.get("/recipes/{recipe_id}", response_model=RecipeDetail)
 def get_recipe(recipe_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
-    return recipe_detail(session, owned_recipe(session, recipe_id, user))
+    return recipe_detail(session, owned_recipe(session, recipe_id, user), user)
 
 
 @router.patch("/ingredients/{ingredient_id}", response_model=RecipeDetail)
@@ -132,7 +152,7 @@ def patch_ingredient(ingredient_id: int, patch: IngredientPatch,
     ing = session.get(Ingredient, ingredient_id)
     if ing is None:
         raise HTTPException(404, "ingredient not found")
-    recipe = owned_recipe(session, ing.recipe_id, user)
+    recipe = owned_recipe(session, ing.recipe_id, user, edit=True)
     fields = patch.model_dump(exclude_unset=True)
     if "food_id" in fields:
         if fields["food_id"] is not None and session.get(Food, fields["food_id"]) is None:
@@ -143,7 +163,7 @@ def patch_ingredient(ingredient_id: int, patch: IngredientPatch,
         ing.grams_source = "manual" if fields["grams"] is not None else None
     session.add(ing)
     session.commit()
-    return recipe_detail(session, recipe)
+    return recipe_detail(session, recipe, user)
 
 
 @router.get("/foods", response_model=list[FoodOut])

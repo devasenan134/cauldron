@@ -31,6 +31,7 @@ export type Ingredient = {
 export type Step = { id: number; position: number; title: string; text: string }
 
 export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
+  can_edit: boolean
   slug: string
   source_url: string | null
   video_url: string | null
@@ -75,12 +76,18 @@ export type GroceryItem = {
   sources: string[]
 }
 
+export type Me = { email: string; name: string; is_owner: boolean }
+
+/** The session is missing or expired; the app shows the sign-in page. */
+export class SignedOut extends Error {}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+  if (res.status === 401) throw new SignedOut()
   if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -93,6 +100,11 @@ const qs = (params: Record<string, string | number | boolean | undefined>) =>
   ).toString()
 
 export const api = {
+  authConfig: () => request<{ google_client_id: string }>('GET', '/auth/config'),
+  me: () => request<Me>('GET', '/auth/me'),
+  signIn: (credential: string) => request<Me>('POST', '/auth/google', { credential }),
+  signOut: () => request<{ ok: boolean }>('POST', '/auth/logout'),
+
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
   facets: () => request<{ cuisines: string[]; categories: string[] }>('GET', '/recipes/facets'),

@@ -107,3 +107,12 @@ class GroceryItem(SQLModel, table=True):
     manual: bool = False  # added by hand; kept when the list is regenerated
     sources: list[str] = Field(default_factory=list, sa_type=JSON)  # recipe titles
     created_at: datetime = Field(default_factory=now)
+
+
+class AuthSession(SQLModel, table=True):
+    """A signed-in browser. The cookie holds the token; only its hash is stored."""
+    id: int | None = Field(default=None, primary_key=True)
+    token_hash: str = Field(unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(default_factory=now)
+    expires_at: datetime
