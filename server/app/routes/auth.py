@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import Field, Session, SQLModel
 
@@ -20,15 +22,17 @@ class Me(SQLModel):
     name: str
     is_owner: bool
     kcal_goal: int
+    theme: str
     token: str | None = None
 
 
 class MePatch(SQLModel):
     kcal_goal: int | None = Field(default=None, ge=500, le=10000)
+    theme: Literal["system", "light", "dark"] | None = None
 
 
 def me_out(user: User) -> Me:
-    return Me(email=user.email, name=user.name, is_owner=is_owner(user), kcal_goal=user.kcal_goal)
+    return Me(email=user.email, name=user.name, is_owner=is_owner(user), kcal_goal=user.kcal_goal, theme=user.theme)
 
 
 @router.get("/config")
@@ -58,6 +62,8 @@ def update_me(body: MePatch, session: Session = Depends(get_session), user: User
     """Your settings, shared by the website and the app."""
     if body.kcal_goal is not None:
         user.kcal_goal = body.kcal_goal
+    if body.theme is not None:
+        user.theme = body.theme
     session.add(user)
     session.commit()
     session.refresh(user)

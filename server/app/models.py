@@ -13,6 +13,7 @@ class User(SQLModel, table=True):
     email: str = Field(unique=True)
     name: str = ""
     kcal_goal: int = 2200  # daily calorie goal, shown on Home (app and website)
+    theme: str = "system"  # system | light | dark, for the app and the website
     created_at: datetime = Field(default_factory=now)
 
 

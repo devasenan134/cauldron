@@ -1,5 +1,6 @@
 package io.github.devasenan134.cauldron.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -132,14 +133,14 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
                 }
                 item {
                     Column(
-                        Modifier.offset(y = (-32).dp).clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Cream).padding(horizontal = 20.dp, vertical = 24.dp),
+                        Modifier.offset(y = (-32).dp).clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(C.bg).padding(horizontal = 20.dp, vertical = 24.dp),
                     ) {
                         Text(r.title, style = MaterialTheme.typography.headlineMedium)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
                             r.totalMinutes?.let { Meta(Icons.Default.Schedule, "$it min") }
                             (r.yieldText ?: r.servings?.let { plural(it, "serving") })?.let { Meta(Icons.Default.Restaurant, it) }
-                            r.cuisine?.let { Pill(it, background = Paper) }
-                            r.category?.let { Pill(it, background = Paper) }
+                            r.cuisine?.let { Pill(it, background = C.surface) }
+                            r.category?.let { Pill(it, background = C.surface) }
                         }
                         if (r.description.isNotBlank()) Text(r.description, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 14.dp))
                         Links(r)
@@ -153,8 +154,8 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                         groups.forEach { (group, ings) ->
                             if (group.isNotEmpty()) Text(group.uppercase(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                                color = Ember, letterSpacing = 1.sp, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp, start = 4.dp))
-                            Surface(color = Paper, shape = RoundedCornerShape(20.dp)) {
+                                color = C.goText, letterSpacing = 1.sp, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp, start = 4.dp))
+                            Surface(color = C.surface, shape = RoundedCornerShape(20.dp)) {
                                 Column {
                                     ings.forEachIndexed { i, ing ->
                                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 14.dp))
@@ -168,10 +169,10 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
                 }
                 itemsIndexed(r.steps, key = { _, s -> s.id }) { i, s ->
                     Row(Modifier.offset(y = (-32).dp).padding(horizontal = 20.dp, vertical = 6.dp)) {
-                        Box(Modifier.size(34.dp).clip(CircleShape).background(EmberBright), contentAlignment = Alignment.Center) {
-                            Text("${i + 1}", color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold)
+                        Box(Modifier.size(34.dp).clip(CircleShape).background(C.ink), contentAlignment = Alignment.Center) {
+                            Text("${i + 1}", color = C.bg, fontFamily = Display, fontWeight = FontWeight.Bold)
                         }
-                        Surface(color = Paper, shape = RoundedCornerShape(20.dp), modifier = Modifier.padding(start = 12.dp).fillMaxWidth()) {
+                        Surface(color = C.surface, shape = RoundedCornerShape(20.dp), modifier = Modifier.padding(start = 12.dp).fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
                                 if (s.title.isNotBlank()) Text(s.title, style = MaterialTheme.typography.titleMedium)
                                 Text(s.text, style = MaterialTheme.typography.bodyMedium, lineHeight = 22.sp, modifier = Modifier.padding(top = if (s.title.isNotBlank()) 6.dp else 0.dp))
@@ -182,11 +183,11 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
                 item { Spacer(Modifier.height(120.dp)) }
             }
             // Sticky "Add to plan"
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Cream, Cream)))
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, C.bg, C.bg)))
                 .windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp, vertical = 14.dp)) {
                 Button(
-                    onClick = { adding = true }, colors = ButtonDefaults.buttonColors(containerColor = Ink),
-                    modifier = Modifier.fillMaxWidth().height(58.dp).shadow(12.dp, RoundedCornerShape(50), spotColor = Ink),
+                    onClick = { adding = true }, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo),
+                    modifier = Modifier.fillMaxWidth().height(58.dp).shadow(12.dp, RoundedCornerShape(50), spotColor = C.ink),
                 ) { Text("Add to plan", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
             }
             if (adding) AddToPlanSheet(r, onDismiss = { adding = false }) { msg, ok ->
@@ -201,11 +202,10 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
         val solid by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 600 } }
         val barAlpha by animateFloatAsState(if (solid) 1f else 0f, label = "bar")
         Row(
-            Modifier.fillMaxWidth().background(Cream.copy(alpha = barAlpha)).statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().background(C.bg.copy(alpha = barAlpha)).statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.9f)).pressable(back, 0.9f),
-                contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Ink) }
+            FloatingCircle(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.ink) }
             Text(recipe?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 12.dp).graphicsLayer { alpha = barAlpha })
         }
@@ -228,8 +228,8 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit) {
 
 @Composable
 private fun Meta(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(Modifier.background(Paper, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = Ember, modifier = Modifier.size(15.dp))
+    Row(Modifier.background(C.surface, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = C.goText, modifier = Modifier.size(15.dp))
         Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 5.dp))
     }
 }
@@ -239,10 +239,10 @@ private fun Links(r: RecipeDetail) {
     val context = LocalContext.current
     Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         r.videoUrl?.let { url ->
-            Row(Modifier.clip(RoundedCornerShape(50)).background(EmberSoft).pressable({ openUrl(context, url) }).padding(horizontal = 14.dp, vertical = 9.dp),
+            Row(Modifier.clip(RoundedCornerShape(50)).background(C.goSoft).pressable({ openUrl(context, url) }).padding(horizontal = 14.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PlayArrow, null, tint = Ember, modifier = Modifier.size(20.dp))
-                Text("Watch video", color = Ember, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp))
+                Icon(Icons.Default.PlayArrow, null, tint = C.goText, modifier = Modifier.size(20.dp))
+                Text("Watch video", color = C.goText, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp))
             }
         }
         r.sourceUrl?.let { url ->
@@ -256,31 +256,31 @@ private fun Links(r: RecipeDetail) {
 private fun NutritionCard(r: RecipeDetail) {
     val n = r.nutrition
     val m = n.perServing ?: n.total
-    Surface(color = Ink, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
+    Surface(color = C.surface, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, C.line), modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
         Column(Modifier.padding(20.dp)) {
-            Text(if (n.perServing != null) "Per serving · recipe makes ${num(r.servings ?: 1.0)}" else "Whole recipe",
-                color = Cream.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+            Text((if (n.perServing != null) "Per serving · recipe makes ${num(r.servings ?: 1.0)}" else "Whole recipe").uppercase(),
+                color = C.muted, style = MaterialTheme.typography.labelMedium, letterSpacing = 0.6.sp)
             Row(verticalAlignment = Alignment.Bottom) {
-                Text("${m.kcal.roundToInt()}", color = Color.White, style = MaterialTheme.typography.displaySmall)
-                Text(" kcal", color = Cream.copy(alpha = 0.7f), modifier = Modifier.padding(bottom = 8.dp))
+                Text("${m.kcal.roundToInt()}", color = C.ink, style = MaterialTheme.typography.displaySmall)
+                Text(" kcal", color = C.muted, modifier = Modifier.padding(bottom = 8.dp))
             }
             // Where the calories come from: protein and carbs 4 kcal/g, fat 9.
             val p = m.protein * 4; val c = m.carbs * 4; val f = m.fat * 9
             val total = (p + c + f).takeIf { it > 0 } ?: 1.0
-            Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50))) {
-                Box(Modifier.weight((p / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(Color(0xFF60A5FA)))
-                Box(Modifier.weight((c / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(Color(0xFFFBBF24)))
-                Box(Modifier.weight((f / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(Color(0xFFFB923C)))
+            Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50))) {
+                Box(Modifier.weight((p / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(ProteinColor))
+                Box(Modifier.weight((c / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(CarbsColor))
+                Box(Modifier.weight((f / total).toFloat().coerceAtLeast(0.01f)).fillMaxHeight().background(FatColor))
             }
-            Row(Modifier.padding(top = 12.dp)) {
-                Macro("Protein", m.protein, Color(0xFF60A5FA), Modifier.weight(1f))
-                Macro("Carbs", m.carbs, Color(0xFFFBBF24), Modifier.weight(1f))
-                Macro("Fat", m.fat, Color(0xFFFB923C), Modifier.weight(1f))
+            Row(Modifier.padding(top = 14.dp)) {
+                Macro("Protein", m.protein, ProteinColor, Modifier.weight(1f))
+                Macro("Carbs", m.carbs, CarbsColor, Modifier.weight(1f))
+                Macro("Fat", m.fat, FatColor, Modifier.weight(1f))
             }
             val small = MaterialTheme.typography.bodySmall
-            if (n.perServing != null) Text("Whole recipe: ${kcal(n.total.kcal)}", style = small, color = Cream.copy(alpha = 0.6f), modifier = Modifier.padding(top = 12.dp))
-            if (n.leftOut.isNotEmpty()) Text("Not counted (no amount): ${n.leftOut.joinToString()}", style = small, color = Color(0xFFFDBA74), modifier = Modifier.padding(top = 4.dp))
-            if (n.estimated.isNotEmpty()) Text("Estimated: ${n.estimated.joinToString()}", style = small, color = Cream.copy(alpha = 0.6f), modifier = Modifier.padding(top = 4.dp))
+            if (n.perServing != null) Text("Whole recipe: ${kcal(n.total.kcal)}", style = small, color = C.muted, modifier = Modifier.padding(top = 14.dp))
+            if (n.leftOut.isNotEmpty()) Text("Not counted (no amount): ${n.leftOut.joinToString()}", style = small, color = C.pinkFg, modifier = Modifier.padding(top = 4.dp))
+            if (n.estimated.isNotEmpty()) Text("Estimated: ${n.estimated.joinToString()}", style = small, color = C.faint, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
@@ -290,8 +290,8 @@ private fun Macro(label: String, grams: Double, color: Color, modifier: Modifier
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Column(Modifier.padding(start = 8.dp)) {
-            Text("${grams.roundToInt()} g", color = Color.White, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Text(label, color = Cream.copy(alpha = 0.6f), fontSize = 12.sp)
+            Text("${grams.roundToInt()} g", color = C.ink, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(label, color = C.muted, fontSize = 12.sp)
         }
     }
 }
@@ -308,7 +308,7 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
     var busy by remember { mutableStateOf(false) }
     val extra = cook - eat
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Text("Add to plan", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
             Text(r.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp))
@@ -318,16 +318,16 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
                 StepperCard("Cook", "portions", cook, { cook = it; if (eat > it) eat = it }, Modifier.weight(1f))
                 StepperCard("Eat now", "portions", eat, { eat = it; if (cook < it) cook = it }, Modifier.weight(1f), step = 0.5, min = 0.5)
             }
-            Surface(color = if (extra > 0) AmberSoft else Paper, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+            Surface(color = if (extra > 0) C.purpleBg else C.surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                 Text(
                     if (extra > 0) "🥡  Batch cook: ${plural(extra, "portion")} go${if (extra == 1.0) "es" else ""} in the fridge for later."
                     else "Cook more than you eat to batch cook, and the rest goes in the fridge.",
-                    color = if (extra > 0) Amber else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
+                    color = if (extra > 0) C.purpleFg else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
                     fontWeight = if (extra > 0) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(14.dp),
                 )
             }
             Button(
-                enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = Ink),
+                enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = C.ink),
                 modifier = Modifier.padding(20.dp).fillMaxWidth().height(56.dp),
                 onClick = {
                     busy = true
@@ -354,7 +354,7 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
 
 @Composable
 fun StepperCard(label: String, unit: String, value: Double, onChange: (Double) -> Unit, modifier: Modifier, step: Double = 1.0, min: Double = step) {
-    Surface(color = Paper, shape = RoundedCornerShape(20.dp), modifier = modifier) {
+    Surface(color = C.surface, shape = RoundedCornerShape(20.dp), modifier = modifier) {
         Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Stepper(value, onChange, step = step, min = min, big = true, label = label.lowercase())
@@ -369,13 +369,13 @@ private fun IngredientRow(ing: Ingredient, editable: Boolean, onGrams: () -> Uni
         Column(Modifier.weight(1f)) {
             Text(buildString { append(ing.name); if (ing.note.isNotBlank()) append(", ${ing.note}") }, fontWeight = FontWeight.SemiBold)
             if (ing.label.isNotBlank()) Text(ing.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(ing.foodName ?: "no food linked", style = MaterialTheme.typography.labelSmall, color = Stone.copy(alpha = 0.7f),
+            Text(ing.foodName ?: "no food linked", style = MaterialTheme.typography.labelSmall, color = C.muted.copy(alpha = 0.7f),
                 modifier = if (editable) Modifier.clickable(onClick = onFood) else Modifier)
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 ing.grams?.let { "${it.roundToInt()} g" } ?: if (editable) "+ g" else "—",
-                color = when { ing.grams == null -> Amber; ing.gramsSource == "estimate" -> Stone; else -> Ink },
+                color = when { ing.grams == null -> C.purpleFg; ing.gramsSource == "estimate" -> C.muted; else -> C.ink },
                 fontWeight = FontWeight.SemiBold,
                 fontStyle = if (ing.gramsSource == "estimate") FontStyle.Italic else FontStyle.Normal,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (editable) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
@@ -417,7 +417,7 @@ private fun GramsDialog(ing: Ingredient, onDismiss: () -> Unit, onSave: (Double?
             TextButton(onClick = {
                 val v = text.trim().replace(',', '.')
                 if (v.isEmpty()) onSave(null) else v.toDoubleOrNull()?.let(onSave)
-            }) { Text("Save", color = Ember) }
+            }) { Text("Save", color = C.goText) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -433,7 +433,7 @@ private fun FoodSheet(initial: String, onDismiss: () -> Unit, onPick: (Food) -> 
         delay(250)
         foods = if (q.isBlank()) emptyList() else runCatching { app.api.foods(q) }.getOrNull()
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
         Text("What is it counted as?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp))
         SearchPill(q, { q = it }, Modifier.padding(20.dp), placeholder = "Search foods")
         LazyColumn(Modifier.height(460.dp)) {

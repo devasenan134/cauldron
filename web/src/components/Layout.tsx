@@ -28,21 +28,21 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 bg-cream/85 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-stone-200 bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-5 py-3">
           <NavLink to="/" className="flex items-center gap-2">
             <img src="/favicon.svg" alt="" className="h-9 w-9" />
-            <span className="font-display text-2xl font-extrabold tracking-tight">Cauldron</span>
+            <span className="font-display text-2xl font-extrabold uppercase tracking-tight">Cauldron</span>
           </NavLink>
           {/* Desktop: pill nav in the header */}
-          <nav className="mx-auto hidden items-center gap-1 rounded-full bg-ink p-1.5 shadow-lg md:flex">
+          <nav className="mx-auto hidden items-center gap-1 md:flex">
             {links.map((l) => (
               <NavLink key={l.to} to={l.to} end={l.to === '/'}
                 className={({ isActive }) =>
-                  `press relative rounded-full px-4 py-2 text-sm font-semibold transition-colors ${isActive ? 'bg-ember-bright text-white' : 'text-cream/75 hover:text-cream'}`}>
+                  `press relative rounded-full px-4 py-2 text-sm font-semibold uppercase tracking-wide transition-colors ${isActive ? 'bg-ink text-cream' : 'text-stone-500 hover:text-ink'}`}>
                 {l.label}
                 {badge(l.to) > 0 && (
-                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-ember-bright px-1 text-[10px] font-bold text-white ring-2 ring-ink">{badge(l.to)}</span>
+                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-cream ring-2 ring-paper">{badge(l.to)}</span>
                 )}
               </NavLink>
             ))}
@@ -51,25 +51,20 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 pb-32 pt-4 md:pb-16">
+      <main className="mx-auto max-w-7xl px-5 pb-28 pt-6 md:pb-16">
         <Outlet />
       </main>
 
-      {/* Phones: the floating pill at the bottom, like the app */}
-      <nav className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4 md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="flex items-center gap-1 rounded-full bg-ink p-1.5 shadow-2xl">
+      {/* Phones: the bottom bar, like the app's */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-paper md:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex h-16">
           {links.map((l) => (
-            <NavLink key={l.to} to={l.to} end={l.to === '/'} aria-label={l.label}
-              className={({ isActive }) =>
-                `press relative flex h-12 items-center gap-2 rounded-full px-3.5 text-sm font-semibold transition-all ${isActive ? 'bg-ember-bright text-white' : 'text-cream/75'}`}>
-              {({ isActive }) => (
-                <>
-                  <Icon d={l.icon} />
-                  {isActive && <span className="rise">{l.label}</span>}
-                  {badge(l.to) > 0 && !isActive && (
-                    <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-ember-bright px-1 text-[10px] font-bold text-white ring-2 ring-ink">{badge(l.to)}</span>
-                  )}
-                </>
+            <NavLink key={l.to} to={l.to} end={l.to === '/'}
+              className={({ isActive }) => `press relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] ${isActive ? 'font-semibold text-ink' : 'font-medium text-stone-400'}`}>
+              <Icon d={l.icon} />
+              {l.label}
+              {badge(l.to) > 0 && (
+                <span className="absolute left-1/2 top-1.5 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-cream">{badge(l.to)}</span>
               )}
             </NavLink>
           ))}

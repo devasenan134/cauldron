@@ -9,8 +9,8 @@ export function Pill({ children, tone = 'sand', className = '' }: { children: Re
     sand: 'bg-sand text-ink',
     paper: 'bg-paper text-ink',
     ember: 'bg-ember-soft text-ember',
-    bright: 'bg-ember-bright text-white',
-    amber: 'bg-amber-deep text-white',
+    bright: 'bg-ember-bright text-on-go',
+    amber: 'bg-pink-deep text-white',
     sky: 'bg-sky-soft text-sky-deep',
     ink: 'bg-ink text-cream',
   }[tone]
@@ -28,10 +28,10 @@ export function Button({
   className?: string
 }) {
   const cls = {
-    primary: 'bg-ink text-cream hover:bg-stone-800',
-    accent: 'bg-ember-bright text-white hover:bg-ember',
-    ghost: 'border-2 border-stone-200 text-ink hover:bg-paper',
-    soft: 'bg-ember-soft text-ember hover:bg-orange-100',
+    primary: 'bg-ink text-cream hover:opacity-85',
+    accent: 'bg-ember-bright text-on-go hover:opacity-90',
+    ghost: 'border border-stone-300 text-ink hover:bg-paper',
+    soft: 'bg-ember-soft text-ember hover:opacity-85',
   }[variant]
   return (
     <button type={type} onClick={onClick} disabled={disabled}
@@ -44,7 +44,7 @@ export function Button({
 export function Chip({ children, selected, onClick }: { children: ReactNode; selected: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
-      className={`press shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${selected ? 'bg-ink text-cream' : 'bg-paper text-ink hover:bg-sand'}`}>
+      className={`press shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${selected ? 'bg-ink text-cream' : 'bg-paper text-ink ring-1 ring-stone-200 hover:bg-sand'}`}>
       {children}
     </button>
   )
@@ -56,7 +56,7 @@ export function Avatar({ size = 40 }: { size?: number }) {
   const initial = (me?.name || me?.email || '?').charAt(0).toUpperCase()
   return (
     <Link to="/settings" title="Settings" aria-label="Settings"
-      className="press grid shrink-0 place-items-center rounded-full bg-ink font-display font-bold text-cream"
+      className="press grid shrink-0 place-items-center rounded-full bg-paper font-display font-bold text-ink shadow-[0_4px_16px_rgba(0,0,0,0.10)] ring-1 ring-stone-200"
       style={{ width: size, height: size, fontSize: size * 0.42 }}>
       {initial}
     </Link>
@@ -69,7 +69,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
     <div className="mb-6 flex items-end gap-3">
       <div className="min-w-0 flex-1">
         {subtitle && <p className="text-sm text-stone-500">{subtitle}</p>}
-        <h1 className="font-display text-4xl font-extrabold tracking-tight sm:text-5xl">{title}</h1>
+        <h1 className="font-display text-4xl font-extrabold sm:text-5xl">{title}</h1>
       </div>
       {actions}
     </div>
@@ -103,7 +103,7 @@ export function Stepper({
   value, onChange, step = 1, min = step, label, tone = 'ink', big,
 }: { value: number; onChange: (v: number) => void; step?: number; min?: number; label?: string; tone?: 'ink' | 'amber'; big?: boolean }) {
   const color = tone === 'amber' ? 'text-amber-deep' : 'text-ink'
-  const bg = tone === 'amber' ? 'bg-amber-soft hover:bg-orange-100' : 'bg-sand hover:bg-stone-200'
+  const bg = tone === 'amber' ? 'bg-amber-soft hover:opacity-80' : 'bg-sand hover:opacity-80'
   const size = big ? 'h-10 w-10 text-xl' : 'h-7 w-7 text-base'
   const canLess = value - step >= min - 1e-9
   return (

@@ -50,16 +50,14 @@ fun SignInScreen() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF2A211A), Ink)))) {
-        // A warm glow, like embers under the pot.
-        Box(Modifier.align(Alignment.Center).size(420.dp).clip(CircleShape).background(Brush.radialGradient(listOf(EmberBright.copy(alpha = 0.35f), Color.Transparent))))
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.size(140.dp).clip(RoundedCornerShape(40.dp)).background(Cream), contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(150.dp))
+    Box(Modifier.fillMaxSize().background(C.bg)) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).padding(28.dp)) {
+            Spacer(Modifier.weight(0.6f))
+            Box(Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(C.surface), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.ic_launcher_foreground), null, Modifier.size(104.dp))
             }
-            Text("Cauldron", color = Cream, style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(top = 24.dp))
-            Text("Cook once, eat all week.", color = Cream.copy(alpha = 0.7f), fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("Cook once,\neat all week.", color = C.ink, style = MaterialTheme.typography.displayMedium, lineHeight = 52.sp, modifier = Modifier.padding(top = 28.dp))
+            Text("Recipes, meal plans, batch cooking and groceries: Cauldron.", color = C.muted, fontSize = 17.sp, modifier = Modifier.padding(top = 12.dp))
             Spacer(Modifier.weight(1f))
             Button(
                 enabled = !busy,
@@ -83,13 +81,13 @@ fun SignInScreen() {
                         }
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Cream, contentColor = Ink),
+                colors = ButtonDefaults.buttonColors(containerColor = C.ink, contentColor = C.bg),
                 modifier = Modifier.fillMaxWidth().height(58.dp),
             ) {
-                if (busy) CircularProgressIndicator(Modifier.size(22.dp), color = Ink, strokeWidth = 2.dp)
+                if (busy) CircularProgressIndicator(Modifier.size(22.dp), color = C.bg, strokeWidth = 2.dp)
                 else Text("Continue with Google", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
-            error?.let { Text(it, color = Color(0xFFFCA5A5), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp)) }
+            error?.let { Text(it, color = C.danger, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) }
             Spacer(Modifier.height(24.dp))
         }
     }

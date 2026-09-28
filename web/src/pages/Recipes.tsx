@@ -33,13 +33,13 @@ export default function Recipes() {
       <div className="relative">
         <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-lg text-stone-400">⌕</span>
         <input
-          className="w-full rounded-full bg-paper py-4 pl-12 pr-12 text-base shadow-md shadow-stone-900/5 outline-none ring-1 ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-ember-bright/50"
+          className="w-full rounded-full bg-paper py-4 pl-12 pr-12 text-base shadow-[0_6px_20px_rgba(0,0,0,0.06)] outline-none ring-1 ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-ember-bright/50"
           placeholder="Search recipes or ingredients" value={q} onChange={(e) => set('q', e.target.value)} />
         {q && <button onClick={() => set('q', '')} aria-label="Clear search" className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full px-2 text-stone-400 hover:text-ink">✕</button>}
       </div>
 
       <div className="-mx-5 mt-4 flex gap-2 overflow-x-auto px-5 pb-2 [scrollbar-width:none]">
-        <label className={`press relative shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${cuisine ? 'bg-ink text-cream' : 'bg-paper'}`}>
+        <label className={`press relative shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${cuisine ? 'bg-ink text-cream' : 'bg-paper ring-1 ring-stone-200'}`}>
           🌍 {cuisine || 'Cuisine'} ▾
           <select aria-label="Cuisine" className="absolute inset-0 cursor-pointer opacity-0" value={cuisine} onChange={(e) => set('cuisine', e.target.value)}>
             <option value="">All cuisines</option>
@@ -64,7 +64,7 @@ export default function Recipes() {
             <div className="lift relative aspect-square overflow-hidden rounded-3xl bg-sand">
               {r.image_url && <img src={thumb(r.image_url, 480, 480)} alt="" loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />}
               {r.kcal_per_serving ? (
-                <span className="absolute bottom-2.5 left-2.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold backdrop-blur">{Math.round(r.kcal_per_serving)} kcal</span>
+                <span className="absolute bottom-2.5 left-2.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-black backdrop-blur">{Math.round(r.kcal_per_serving)} kcal</span>
               ) : null}
             </div>
             <h3 className="mt-3 line-clamp-2 font-display text-lg font-bold leading-snug">{r.title}</h3>

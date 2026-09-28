@@ -14,12 +14,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Kitchen
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Kitchen
+import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,8 +39,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.devasenan134.cauldron.data.Session
 import io.github.devasenan134.cauldron.ui.CauldronTheme
-import io.github.devasenan134.cauldron.ui.Cream
-import io.github.devasenan134.cauldron.ui.FloatingTabBar
+import io.github.devasenan134.cauldron.ui.C
+import io.github.devasenan134.cauldron.ui.BottomTabBar
 import io.github.devasenan134.cauldron.ui.FridgeScreen
 import io.github.devasenan134.cauldron.ui.GroceryScreen
 import io.github.devasenan134.cauldron.ui.HomeScreen
@@ -57,9 +60,19 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as CauldronApp
         setContent {
-            CauldronTheme {
-                val state by app.session.state.collectAsState()
-                Box(Modifier.fillMaxSize().background(Cream)) {
+            val state by app.session.state.collectAsState()
+            val theme = (state as? Session.State.SignedIn)?.me?.theme ?: "system"
+            CauldronTheme(theme) {
+                // Dark status-bar icons on the light theme, light ones on the dark theme.
+                val light = !C.dark
+                val view = LocalView.current
+                SideEffect {
+                    WindowCompat.getInsetsController(window, view).apply {
+                        isAppearanceLightStatusBars = light
+                        isAppearanceLightNavigationBars = light
+                    }
+                }
+                Box(Modifier.fillMaxSize().background(C.bg)) {
                     when (state) {
                         Session.State.Loading -> {}
                         Session.State.SignedOut -> SignInScreen()
@@ -94,18 +107,18 @@ private fun AppRoot() {
     val app = app()
     val toBuy = app.grocery.items.collectAsState().value.count { !it.checked }
     val tabs = listOf(
-        TabItem(Routes.HOME, "Home", Icons.Default.Home),
-        TabItem(Routes.RECIPES, "Recipes", Icons.AutoMirrored.Filled.MenuBook),
-        TabItem(Routes.PLAN, "Plan", Icons.Default.CalendarMonth),
-        TabItem(Routes.FRIDGE, "Fridge", Icons.Default.Kitchen),
-        TabItem(Routes.GROCERY, "Grocery", Icons.Default.ShoppingCart, badge = toBuy),
+        TabItem(Routes.HOME, "Home", Icons.Outlined.Explore),
+        TabItem(Routes.RECIPES, "Recipes", Icons.AutoMirrored.Outlined.MenuBook),
+        TabItem(Routes.PLAN, "Plan", Icons.Outlined.CalendarMonth),
+        TabItem(Routes.FRIDGE, "Fridge", Icons.Outlined.Kitchen),
+        TabItem(Routes.GROCERY, "Grocery", Icons.Outlined.ShoppingBasket, badge = toBuy),
     )
     val showBar = route in tabs.map { it.route }
     val openRecipe: (Int) -> Unit = { nav.navigate(Routes.recipe(it)) }
 
     CompositionLocalProvider(
         LocalOpenSettings provides { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-        LocalBottomSpace provides if (showBar) 84.dp else 0.dp,
+        LocalBottomSpace provides if (showBar) 72.dp else 0.dp,
     ) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
@@ -132,7 +145,7 @@ private fun AppRoot() {
                 showBar, modifier = Modifier.align(Alignment.BottomCenter),
                 enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut(),
             ) {
-                FloatingTabBar(tabs, route, onSelect = { nav.tab(it.route) })
+                BottomTabBar(tabs, route, onSelect = { nav.tab(it.route) })
             }
         }
     }

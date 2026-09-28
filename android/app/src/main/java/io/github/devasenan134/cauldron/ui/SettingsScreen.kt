@@ -1,6 +1,9 @@
 package io.github.devasenan134.cauldron.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +70,7 @@ fun SettingsScreen(back: () -> Unit) {
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(me?.name?.ifBlank { null } ?: "Signed in", fontWeight = FontWeight.SemiBold)
                         Text(me?.email.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (me?.isOwner == true) Text("Owner", style = MaterialTheme.typography.bodySmall, color = Ember)
+                        if (me?.isOwner == true) Text("Owner", style = MaterialTheme.typography.bodySmall, color = C.goText)
                     }
                 }
                 OutlinedButton(
@@ -79,8 +83,25 @@ fun SettingsScreen(back: () -> Unit) {
                     },
                     modifier = Modifier.padding(top = 12.dp),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Logout, null, tint = Ink, modifier = Modifier.size(18.dp))
-                    Text("  Sign out", color = Ink)
+                    Icon(Icons.AutoMirrored.Filled.Logout, null, tint = C.ink, modifier = Modifier.size(18.dp))
+                    Text("  Sign out", color = C.ink)
+                }
+            }
+
+            SectionLabel("Appearance")
+            Card {
+                Text("Theme", fontWeight = FontWeight.SemiBold)
+                Text("Saved to your account, so the website follows too", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val theme = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me?.theme ?: "system"
+                Row(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(50)).background(C.surfaceAlt).padding(4.dp)) {
+                    listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (value, label) ->
+                        val selected = theme == value
+                        Box(
+                            Modifier.weight(1f).clip(RoundedCornerShape(50)).background(if (selected) C.surface else Color.Transparent)
+                                .pressable({ app.scope.launch { app.setTheme(value) } }, 0.95f).padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = if (selected) C.ink else C.muted) }
+                    }
                 }
             }
 
@@ -91,7 +112,7 @@ fun SettingsScreen(back: () -> Unit) {
                         Text("Daily calorie goal", fontWeight = FontWeight.SemiBold)
                         Text("Shown on the Home screen", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("%,d kcal".format(goal), style = MaterialTheme.typography.titleMedium, color = Ember)
+                    Text("%,d kcal".format(goal), style = MaterialTheme.typography.titleMedium, color = C.goText)
                 }
             }
 
@@ -148,25 +169,25 @@ private fun UpdatesCard() {
         if (release == null) {
             when (val s = step) {
                 UpdateStep.Checking -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = Ember, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(18.dp), color = C.goText, strokeWidth = 2.dp)
                     Text("  Checking…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 UpdateStep.UpToDate -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF15803D), modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.CheckCircle, null, tint = C.goText, modifier = Modifier.size(18.dp))
                     Text("  You have the latest version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                is UpdateStep.Failed -> Text(s.message, color = Danger, modifier = Modifier.padding(top = 12.dp))
+                is UpdateStep.Failed -> Text(s.message, color = C.danger, modifier = Modifier.padding(top = 12.dp))
                 else -> {}
             }
             if (step != UpdateStep.Checking) OutlinedButton(onClick = { check() }, modifier = Modifier.padding(top = 12.dp)) {
-                Text("Check for updates", color = Ink)
+                Text("Check for updates", color = C.ink)
             }
             return@Card
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-            Icon(Icons.Default.SystemUpdate, null, tint = Ember)
-            Text("  Version ${release.version} is available", fontWeight = FontWeight.SemiBold, color = Ember)
+            Icon(Icons.Default.SystemUpdate, null, tint = C.goText)
+            Text("  Version ${release.version} is available", fontWeight = FontWeight.SemiBold, color = C.goText)
         }
         if (release.notes.isNotBlank()) Text(release.notes.lines().joinToString("\n") { it.replaceFirst(Regex("^\\s*[-*] "), "• ") }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
         if (release.size > 0) Text("%.1f MB".format(release.size / 1_048_576.0), style = MaterialTheme.typography.bodySmall,
@@ -174,22 +195,22 @@ private fun UpdatesCard() {
 
         when (val s = step) {
             is UpdateStep.Downloading -> Column(Modifier.padding(top = 12.dp)) {
-                LinearProgressIndicator(progress = { s.progress }, color = Ember, trackColor = EmberSoft, modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(progress = { s.progress }, color = C.goText, trackColor = C.goSoft, modifier = Modifier.fillMaxWidth())
                 Text("Downloading… ${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
             }
             is UpdateStep.Ready -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!canInstall) {
                     Text("Android needs your permission for Cauldron to install updates. Turn on “Allow from this source”, then come back.",
                         style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { updates.openInstallPermission() }) { Text("Open settings", color = Ink) }
+                    OutlinedButton(onClick = { updates.openInstallPermission() }) { Text("Open settings", color = C.ink) }
                 }
-                Button(onClick = { updates.install(s.apk) }, enabled = canInstall, colors = ButtonDefaults.buttonColors(containerColor = EmberBright)) { Text("Install ${release.version}", fontWeight = FontWeight.Bold) }
+                Button(onClick = { updates.install(s.apk) }, enabled = canInstall, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo)) { Text("Install ${release.version}", fontWeight = FontWeight.Bold) }
             }
             is UpdateStep.Failed -> {
-                Text(s.message, color = Danger, modifier = Modifier.padding(top = 12.dp))
-                Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = Ink), modifier = Modifier.padding(top = 8.dp)) { Text("Try again") }
+                Text(s.message, color = C.danger, modifier = Modifier.padding(top = 12.dp))
+                Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = C.ink), modifier = Modifier.padding(top = 8.dp)) { Text("Try again") }
             }
-            else -> Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = EmberBright), modifier = Modifier.padding(top = 12.dp)) {
+            else -> Button(onClick = { download(release) }, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo), modifier = Modifier.padding(top = 12.dp)) {
                 Text("Download and install")
             }
         }
@@ -198,7 +219,7 @@ private fun UpdatesCard() {
 
 @Composable
 private fun Card(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Surface(color = Paper, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = C.surface, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, C.line), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), content = content)
     }
 }

@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 // Mirrors of the server's JSON (snake_case on the wire; see Api.json).
 
 @Serializable
-data class Me(val email: String, val name: String = "", val isOwner: Boolean = false, val kcalGoal: Int = 2200, val token: String? = null)
+data class Me(val email: String, val name: String = "", val isOwner: Boolean = false, val kcalGoal: Int = 2200, val theme: String = "system", val token: String? = null)
 
 @Serializable
 data class Macros(val kcal: Double, val protein: Double, val fat: Double, val carbs: Double)

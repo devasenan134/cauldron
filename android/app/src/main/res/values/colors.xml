@@ -1,5 +1,6 @@
 <resources>
-    <color name="cream">#FAF6F0</color>
-    <color name="ember">#C2410C</color>
-    <color name="ink">#1F1B16</color>
+    <!-- The window behind the app before Compose draws (see ui/Theme.kt for the real palette). -->
+    <color name="cream">#F7F7F7</color>
+    <color name="ink">#0A0A0A</color>
+    <color name="icon_bg">#FFFFFF</color>
 </resources>

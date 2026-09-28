@@ -78,7 +78,7 @@ fun <T> Loaded(
     load: Load<T>,
     onRetry: () -> Unit,
     loading: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Ember) }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = C.goText) }
     },
     content: @Composable (T) -> Unit,
 ) = when (load) {
@@ -87,7 +87,7 @@ fun <T> Loaded(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("🍳", fontSize = 40.sp)
             Text(load.message, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-            TextButton(onClick = onRetry) { Text("Try again", color = Ember, fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = onRetry) { Text("Try again", color = C.goText, fontWeight = FontWeight.SemiBold) }
         }
     }
     is Load.Ready -> content(load.value)
@@ -105,7 +105,7 @@ fun num(n: Double): String = if (n % 1.0 == 0.0) n.toInt().toString() else "%.1f
 fun plural(n: Double, one: String, many: String = one + "s") = "${num(n)} ${if (n == 1.0) one else many}"
 
 @Composable
-fun Pill(text: String, color: Color = Ink, background: Color = MaterialTheme.colorScheme.surfaceVariant, modifier: Modifier = Modifier) =
+fun Pill(text: String, color: Color = C.ink, background: Color = MaterialTheme.colorScheme.surfaceVariant, modifier: Modifier = Modifier) =
     Text(
         text, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
         modifier = modifier.background(background, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),

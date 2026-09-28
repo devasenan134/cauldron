@@ -49,16 +49,16 @@ export default function Grocery() {
     <div className="rise mx-auto max-w-2xl">
       <PageHeader title="Grocery" subtitle={list.length ? `${done.length} of ${list.length} in the cart` : 'Your list'} />
       {list.length > 0 && (
-        <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-ember-soft">
-          <div className="h-full rounded-full bg-gradient-to-r from-orange-400 to-ember-bright transition-[width] duration-500" style={{ width: `${progress}%` }} />
+        <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-stone-200">
+          <div className="h-full rounded-full bg-ember-bright transition-[width] duration-500" style={{ width: `${progress}%` }} />
         </div>
       )}
 
-      <form onSubmit={submit} className="mb-6 flex items-center gap-2 rounded-full bg-paper py-1.5 pl-5 pr-1.5 shadow-md shadow-stone-900/5 ring-1 ring-stone-200 focus-within:ring-2 focus-within:ring-ember-bright/50">
+      <form onSubmit={submit} className="mb-4 flex items-center gap-2 rounded-full bg-paper py-1.5 pl-5 pr-1.5 shadow-[0_6px_20px_rgba(0,0,0,0.06)] ring-1 ring-stone-200 focus-within:ring-2 focus-within:ring-ember-bright/50">
         <input className="min-w-0 flex-1 bg-transparent py-2 text-base outline-none placeholder:text-stone-400"
           placeholder="Add an item, e.g. “Paneer 200 g”" value={text} onChange={(e) => setText(e.target.value)} />
         <button type="submit" disabled={!text.trim()} aria-label="Add"
-          className="press grid h-11 w-11 place-items-center rounded-full bg-ember-bright text-2xl font-bold text-white disabled:bg-stone-200">+</button>
+          className="press grid h-11 w-11 place-items-center rounded-full bg-ink text-2xl font-bold text-cream disabled:bg-stone-200 disabled:text-stone-400">+</button>
       </form>
 
       {items.isError && <p className="text-red-700">Couldn't load the list: {String(items.error)}</p>}
@@ -69,8 +69,8 @@ export default function Grocery() {
 
       {[...aisles].map(([aisle, group]) => (
         <section key={aisle} className="mb-5">
-          <h2 className="mb-2 ml-1 font-display text-lg font-bold">{aisleEmoji(aisle)}&nbsp; {aisle}</h2>
-          <ul className="space-y-1.5">
+          <ListHeader title={`${aisleEmoji(aisle)}  ${aisle}`} count={group.length} />
+          <ul>
             {group.map((i) => <Row key={i.id} item={i} onToggle={() => toggle.mutate(i)} onRemove={() => remove.mutate(i.id)} />)}
           </ul>
         </section>
@@ -78,11 +78,9 @@ export default function Grocery() {
 
       {done.length > 0 && (
         <section className="mt-8">
-          <div className="mb-2 ml-1 flex items-center justify-between">
-            <h2 className="font-display text-lg font-bold">✅&nbsp; In the cart</h2>
-            <button className="font-semibold text-ember hover:underline" onClick={() => clearChecked.mutate()}>Clear</button>
-          </div>
-          <ul className="space-y-1.5">
+          <ListHeader title="In the cart" count={done.length}
+            action={<button className="font-semibold hover:underline" onClick={() => clearChecked.mutate()}>Clear</button>} />
+          <ul>
             {done.map((i) => <Row key={i.id} item={i} onToggle={() => toggle.mutate(i)} onRemove={() => remove.mutate(i.id)} />)}
           </ul>
         </section>
@@ -91,22 +89,33 @@ export default function Grocery() {
   )
 }
 
+/** "Dairy & Eggs · 3" with a hairline running to the edge. */
+function ListHeader({ title, count, action }: { title: string; count: number; action?: React.ReactNode }) {
+  return (
+    <div className="mb-1 mt-4 flex items-center gap-3">
+      <span className="whitespace-pre font-semibold text-stone-500">{title} · {count}</span>
+      <span className="h-px flex-1 bg-stone-200" />
+      {action}
+    </div>
+  )
+}
+
 function Row({ item, onToggle, onRemove }: { item: GroceryItem; onToggle: () => void; onRemove: () => void }) {
   return (
-    <li className={`rise group flex items-center gap-3 rounded-2xl px-4 py-2.5 ${item.checked ? 'bg-paper/55' : 'bg-paper'}`}>
-      <button role="checkbox" aria-checked={item.checked} aria-label={item.name} onClick={onToggle}
-        className={`press grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 text-xs font-bold text-white transition-colors ${
-          item.checked ? 'border-ember-bright bg-ember-bright' : 'border-stone-300 hover:border-ember-bright'}`}>
-        {item.checked && '✓'}
-      </button>
+    <li className="rise group flex items-center gap-3 py-2.5 pl-1">
       <button onClick={onToggle} className="min-w-0 flex-1 text-left">
-        <p className={`truncate ${item.checked ? 'text-stone-400 line-through' : ''}`}>
-          <span className="font-semibold">{item.name}</span>
-          {item.amount && <span className={`ml-2 font-semibold ${item.checked ? '' : 'text-ember'}`}>{item.amount}</span>}
+        <p className={`truncate text-[17px] ${item.checked ? 'text-stone-400 line-through' : ''}`}>
+          {item.name}
+          {item.amount && <span className="ml-2 text-base text-stone-500">{item.amount}</span>}
         </p>
         {item.sources.length > 0 && !item.checked && <p className="truncate text-xs text-stone-400">{item.sources.join(' · ')}</p>}
       </button>
-      <button onClick={onRemove} aria-label={`Remove ${item.name}`} className="rounded-full px-2 text-stone-300 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100">✕</button>
+      <button onClick={onRemove} aria-label={`Remove ${item.name}`} className="rounded-full px-2 text-stone-300 hover:text-danger md:opacity-0 md:group-hover:opacity-100">✕</button>
+      <button role="checkbox" aria-checked={item.checked} aria-label={item.name} onClick={onToggle}
+        className={`press grid h-7 w-7 shrink-0 place-items-center rounded-full border-[1.5px] text-sm font-bold transition-colors ${
+          item.checked ? 'border-ink bg-ink text-cream' : 'border-stone-400 hover:border-ink'}`}>
+        {item.checked && '✓'}
+      </button>
     </li>
   )
 }

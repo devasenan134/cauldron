@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { api, type Me, type PlanEntry } from '../api'
 import { ME, useMe } from '../auth'
 import { addDays, daysAgo, dayLabel, greeting, today, weekStart, weekdayLong } from '../dates'
-import { Button, Pill, SectionTitle, Shimmer } from '../components/ui'
+import { Button, SectionTitle, Shimmer } from '../components/ui'
 import { kcal, num, plural, thumb } from '../format'
 
 export default function Home() {
@@ -81,13 +81,13 @@ export default function Home() {
 
 function Hero({ entry: e, label, more }: { entry: PlanEntry; label: string; more: number }) {
   const body = (
-    <div className="lift group relative h-80 overflow-hidden rounded-[28px] bg-ink sm:h-96">
+    <div className="lift group relative h-80 overflow-hidden rounded-[28px] bg-sand sm:h-96">
       {e.image_url && <img src={thumb(e.image_url, 1200, 800)} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent from-35% to-black/85" />
       <div className="absolute left-4 top-4 flex gap-2">
-        <Pill tone="bright">{label.toUpperCase()}</Pill>
-        {e.leftover_of && <Pill tone="paper">LEFTOVERS</Pill>}
-        {e.cook_portions != null && <Pill tone="paper">BATCH · {num(e.cook_portions)}</Pill>}
+        <span className="rounded-full bg-black/55 px-2.5 py-0.5 text-xs font-semibold text-white">{label.toUpperCase()}</span>
+        {e.leftover_of && <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-black">LEFTOVERS</span>}
+        {e.cook_portions != null && <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-black">BATCH · {num(e.cook_portions)}</span>}
       </div>
       <div className="absolute inset-x-0 bottom-0 p-6">
         <h2 className="font-display text-3xl font-extrabold text-white sm:text-4xl">{e.title}</h2>
@@ -121,8 +121,8 @@ function CaloriesCard({ eaten, goal, onEdit }: { eaten: number; goal: number; on
         <span className={`font-display text-5xl font-extrabold ${over ? 'text-red-700' : ''}`}>{Math.round(eaten).toLocaleString()}</span>
         <span className="text-stone-500">/ {goal.toLocaleString()} kcal</span>
       </p>
-      <div className="mt-4 h-3.5 overflow-hidden rounded-full bg-ember-soft">
-        <div className={`h-full rounded-full bg-gradient-to-r from-orange-400 transition-[width] duration-700 ${over ? 'to-red-700' : 'to-ember-bright'}`}
+      <div className="mt-4 h-3 overflow-hidden rounded-full bg-stone-200">
+        <div className={`h-full rounded-full transition-[width] duration-700 ${over ? 'bg-danger' : 'bg-ember-bright'}`}
           style={{ width: `${Math.min(100, (eaten / goal) * 100)}%` }} />
       </div>
       <p className="mt-2 text-xs text-stone-500">
@@ -160,11 +160,11 @@ function FridgeAlert({ b }: { b: PlanEntry }) {
   const age = daysAgo(b.day!)
   const soon = age >= 3
   return (
-    <Link to="/fridge" className={`press flex items-center gap-3 rounded-3xl p-3 ${soon ? 'bg-amber-soft' : 'bg-paper'}`}>
+    <Link to="/fridge" className={`press flex items-center gap-3 rounded-3xl p-3 ${soon ? 'bg-pink-soft' : 'bg-paper'}`}>
       <img src={thumb(b.image_url, 120)} alt="" className="h-12 w-12 rounded-xl bg-sand object-cover" />
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold">{b.title}</p>
-        <p className={`text-xs ${soon ? 'font-semibold text-amber-deep' : 'text-stone-500'}`}>
+        <p className={`text-xs ${soon ? 'font-semibold text-pink-deep' : 'text-stone-500'}`}>
           {soon ? `Cooked ${age} days ago · eat soon` : age === 0 ? 'Cooked today' : `Cooked ${plural(age, 'day')} ago`}
         </p>
       </div>

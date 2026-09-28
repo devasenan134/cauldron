@@ -110,42 +110,39 @@ fun GroceryScreen(openPlan: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Grocery", subtitle = if (items.isEmpty()) "Your list" else "${done.size} of ${items.size} in the cart")
         PullToRefreshBox(refreshing, onRefresh = { scope.launch { refreshing = true; sync(); refreshing = false } }) {
-            LazyColumn(contentPadding = screenPadding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxSize()) {
+            LazyColumn(contentPadding = screenPadding(top = 4.dp), modifier = Modifier.fillMaxSize()) {
                 if (items.isNotEmpty()) item(key = "progress") {
-                    Box(Modifier.padding(bottom = 10.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50)).background(EmberSoft)) {
+                    Box(Modifier.padding(bottom = 10.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50)).background(C.line)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(progress).clip(RoundedCornerShape(50))
-                            .background(Brush.horizontalGradient(listOf(Color(0xFFFB923C), EmberBright))))
+                            .background(C.go))
                     }
                 }
                 if (!online) item(key = "offline") {
-                    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).background(AmberSoft, RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CloudOff, null, tint = Amber)
+                    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).background(C.purpleBg, RoundedCornerShape(16.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudOff, null, tint = C.purpleFg)
                         Text(
                             if (pending > 0) "Offline · ${plural(pending.toDouble(), "change")} will sync when you're back online."
                             else "Offline · showing the list saved on this phone.",
-                            color = Amber, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 10.dp),
+                            color = C.purpleFg, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 10.dp),
                         )
                     }
                 }
                 item(key = "add") { AddPill(name, { name = it }, ::addItem) }
                 if (items.isEmpty()) item(key = "empty") {
                     Empty("🛒", "Your list is empty", "Plan some meals, then tap the cart button on the Plan tab to build the list.") {
-                        TextButton(onClick = openPlan) { Text("Open the plan", color = Ember, fontWeight = FontWeight.Bold) }
+                        TextButton(onClick = openPlan) { Text("Open the plan", color = C.goText, fontWeight = FontWeight.Bold) }
                     }
                 }
                 aisles.forEach { (aisle, group) ->
-                    item(key = "aisle:$aisle") {
-                        Text("${aisleEmoji(aisle)}  $aisle", style = MaterialTheme.typography.titleMedium, modifier = Modifier.animateItem().padding(top = 14.dp, bottom = 4.dp, start = 4.dp))
-                    }
+                    item(key = "aisle:$aisle") { ListHeader("${aisleEmoji(aisle)}  $aisle", group.size, Modifier.animateItem()) }
                     items(group, key = { it.id }) { item ->
                         ItemRow(item, Modifier.animateItem(), onToggle = { tick(); act { repo.check(item) } }, onRemove = { act { repo.remove(item) } })
                     }
                 }
                 if (done.isNotEmpty()) {
                     item(key = "done") {
-                        Row(Modifier.animateItem().padding(top = 18.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("✅  In the cart", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { act { repo.clearChecked() } }) { Text("Clear", color = Ember, fontWeight = FontWeight.SemiBold) }
+                        ListHeader("In the cart", done.size, Modifier.animateItem()) {
+                            TextButton(onClick = { act { repo.clearChecked() } }) { Text("Clear", color = C.ink, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                     items(done, key = { it.id }) { item ->
@@ -159,46 +156,53 @@ fun GroceryScreen(openPlan: () -> Unit) {
 
 @Composable
 private fun AddPill(value: String, onChange: (String) -> Unit, onAdd: () -> Unit) {
-    Surface(color = Paper, shape = RoundedCornerShape(50), modifier = Modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(50), ambientColor = Ink.copy(alpha = 0.2f), spotColor = Ink.copy(alpha = 0.2f))) {
+    Surface(color = C.surface, shape = RoundedCornerShape(50), modifier = Modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(50), ambientColor = C.ink.copy(alpha = 0.2f), spotColor = C.ink.copy(alpha = 0.2f))) {
         Row(Modifier.padding(start = 20.dp, end = 6.dp).height(56.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
-                if (value.isEmpty()) Text("Add an item, e.g. “Paneer 200 g”", color = Stone.copy(alpha = 0.8f))
-                BasicTextField(value, onChange, singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Ink), cursorBrush = SolidColor(Ember),
+                if (value.isEmpty()) Text("Add an item, e.g. “Paneer 200 g”", color = C.muted.copy(alpha = 0.8f))
+                BasicTextField(value, onChange, singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = C.ink), cursorBrush = SolidColor(C.goText),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { onAdd() }), modifier = Modifier.fillMaxWidth())
             }
-            Box(Modifier.size(44.dp).clip(CircleShape).background(if (value.isBlank()) StoneLight else EmberBright).pressable(onAdd, 0.85f), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Add, "Add", tint = Color.White)
+            Box(Modifier.size(44.dp).clip(CircleShape).background(if (value.isBlank()) C.line else C.ink).pressable(onAdd, 0.85f), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Add, "Add", tint = C.bg)
             }
         }
+    }
+}
+
+/** "Dairy & Eggs · 3" with a hairline running to the edge. */
+@Composable
+private fun ListHeader(title: String, count: Int, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
+    Row(modifier.fillMaxWidth().padding(top = 18.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("$title · $count", color = C.muted, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+        Box(Modifier.weight(1f).padding(start = 12.dp).height(1.dp).background(C.line))
+        trailing()
     }
 }
 
 @Composable
 private fun ItemRow(item: GroceryItem, modifier: Modifier, onToggle: () -> Unit, onRemove: () -> Unit) {
     val checked = item.checked
-    val box by animateColorAsState(if (checked) EmberBright else Color.Transparent, label = "check")
-    Surface(color = if (checked) Paper.copy(alpha = 0.55f) else Paper, shape = RoundedCornerShape(18.dp), modifier = modifier.fillMaxWidth()) {
-        Row(
-            Modifier.pressable(onToggle, 0.98f).semantics { role = Role.Checkbox; stateDescription = if (checked) "in the cart" else "to buy" }
-                .padding(start = 14.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(24.dp).clip(CircleShape).background(box).border(2.dp, if (checked) EmberBright else Color(0xFFD6D3D1), CircleShape), contentAlignment = Alignment.Center) {
-                if (checked) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+    val box by animateColorAsState(if (checked) C.ink else Color.Transparent, label = "check")
+    Row(
+        modifier.fillMaxWidth().pressable(onToggle, 0.98f).semantics { role = Role.Checkbox; stateDescription = if (checked) "in the cart" else "to buy" }
+            .padding(start = 4.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(item.name, style = MaterialTheme.typography.bodyLarge, fontSize = 17.sp, textDecoration = if (checked) TextDecoration.LineThrough else null,
+                    color = if (checked) C.faint else C.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (item.amount.isNotBlank()) Text("  ${item.amount}", color = C.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             }
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(item.name, fontWeight = FontWeight.SemiBold, textDecoration = if (checked) TextDecoration.LineThrough else null,
-                        color = if (checked) Stone else Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (item.amount.isNotBlank()) Text("  ${item.amount}", color = if (checked) Stone.copy(alpha = 0.6f) else Ember, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (item.sources.isNotEmpty() && !checked) Text(item.sources.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
-                    color = Stone.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box(Modifier.size(36.dp).clip(CircleShape).pressable(onRemove, 0.85f), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Close, "Remove ${item.name}", tint = Stone.copy(alpha = 0.4f), modifier = Modifier.size(18.dp))
-            }
+            if (item.sources.isNotEmpty() && !checked) Text(item.sources.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                color = C.faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Box(Modifier.size(36.dp).clip(CircleShape).pressable(onRemove, 0.85f), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Close, "Remove ${item.name}", tint = C.faint.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+        }
+        Box(Modifier.padding(start = 4.dp).size(26.dp).clip(CircleShape).background(box).border(1.5.dp, if (checked) C.ink else C.faint, CircleShape), contentAlignment = Alignment.Center) {
+            if (checked) Icon(Icons.Default.Check, null, tint = C.bg, modifier = Modifier.size(16.dp))
         }
     }
 }

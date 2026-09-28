@@ -80,7 +80,7 @@ export type GroceryItem = {
   sources: string[]
 }
 
-export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number }
+export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number; theme: 'system' | 'light' | 'dark' }
 
 export type AppRelease = { version: string; notes: string; size: number }
 
@@ -111,6 +111,7 @@ export const api = {
   signIn: (credential: string) => request<Me>('POST', '/auth/google', { credential }),
   signOut: () => request<{ ok: boolean }>('POST', '/auth/logout'),
   setKcalGoal: (kcal_goal: number) => request<Me>('PATCH', '/auth/me', { kcal_goal }),
+  setTheme: (theme: Me['theme']) => request<Me>('PATCH', '/auth/me', { theme }),
   appLatest: () => request<AppRelease | null>('GET', '/app/latest'),
 
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>

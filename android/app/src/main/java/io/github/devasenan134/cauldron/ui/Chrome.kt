@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -67,10 +70,13 @@ fun screenPadding(horizontal: Dp = 20.dp, top: Dp = 0.dp) =
 @Composable
 fun ScreenHeader(title: String, subtitle: String? = null, back: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = if (back != null) 8.dp else 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        if (back != null) {
+            FloatingCircle(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.ink) }
+            Spacer(Modifier.width(12.dp))
+        }
         Column(Modifier.weight(1f)) {
             subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(title, style = if (back != null) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineLarge,
@@ -82,56 +88,49 @@ fun ScreenHeader(title: String, subtitle: String? = null, back: (() -> Unit)? = 
 }
 
 @Composable
-fun Avatar(size: Dp = 40.dp) {
+fun Avatar(size: Dp = 44.dp) {
     val app = app()
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
     val update by app.updates.available.collectAsState()
     val open = LocalOpenSettings.current
     val initial = (me?.name?.ifBlank { null } ?: me?.email ?: "?").first().uppercaseChar().toString()
-    BadgedBox(badge = { if (update != null) Badge(containerColor = EmberBright) }, modifier = Modifier.padding(start = 4.dp)) {
-        Box(
-            Modifier.size(size).clip(CircleShape).background(Ink).pressable(open),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(initial, color = Cream, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp)
+    BadgedBox(badge = { if (update != null) Badge(containerColor = C.go) }, modifier = Modifier.padding(start = 4.dp)) {
+        FloatingCircle(open, size) {
+            Text(initial, color = C.ink, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.4f).sp)
         }
     }
+}
+
+/** A round button that floats over the page on a soft shadow (back, search, settings). */
+@Composable
+fun FloatingCircle(onClick: () -> Unit, size: Dp = 44.dp, content: @Composable () -> Unit) {
+    Box(
+        Modifier.size(size).shadow(if (C.dark) 0.dp else 10.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
+            .clip(CircleShape).background(C.surface).pressable(onClick, 0.9f),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 data class TabItem(val route: String, val label: String, val icon: ImageVector, val badge: Int = 0)
 
-/** The floating pill at the bottom: the selected tab grows to show its name. */
+/** The bottom bar: flat, a hairline on top, outline icons with their names. */
 @Composable
-fun FloatingTabBar(tabs: List<TabItem>, selected: String?, onSelect: (TabItem) -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            color = Ink, shape = RoundedCornerShape(50),
-            modifier = Modifier.shadow(16.dp, RoundedCornerShape(50), ambientColor = Ink, spotColor = Ink),
-        ) {
-            Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                tabs.forEach { tab -> TabPill(tab, tab.route == selected) { onSelect(tab) } }
-            }
+fun BottomTabBar(tabs: List<TabItem>, selected: String?, onSelect: (TabItem) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().background(C.surface)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
+        Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+            tabs.forEach { tab -> TabButton(tab, tab.route == selected, Modifier.weight(1f)) { onSelect(tab) } }
         }
     }
 }
 
 @Composable
-private fun TabPill(tab: TabItem, selected: Boolean, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) EmberBright else Color.Transparent, label = "tab")
-    val fg by animateColorAsState(if (selected) Color.White else Cream.copy(alpha = 0.7f), label = "tabText")
-    Row(
-        Modifier.clip(RoundedCornerShape(50)).background(bg).pressable(onClick, 0.9f).height(48.dp).padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+private fun TabButton(tab: TabItem, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val fg by animateColorAsState(if (selected) C.ink else C.faint, label = "tab")
+    Column(modifier.fillMaxHeight().pressable(onClick, 0.9f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         BadgedBox(badge = {
-            if (tab.badge > 0 && !selected) Badge(containerColor = EmberBright) { Text("${tab.badge}", fontSize = 10.sp) }
-        }) { Icon(tab.icon, tab.label, tint = fg, modifier = Modifier.size(22.dp)) }
-        AnimatedVisibility(
-            selected,
-            enter = fadeIn() + expandHorizontally(spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow)),
-            exit = fadeOut() + shrinkHorizontally(),
-        ) {
-            Text(tab.label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp), maxLines = 1)
-        }
+            if (tab.badge > 0) Badge(containerColor = C.ink, contentColor = C.bg) { Text("${tab.badge}", fontSize = 10.sp) }
+        }) { Icon(tab.icon, null, tint = fg, modifier = Modifier.size(24.dp)) }
+        Text(tab.label, color = fg, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, modifier = Modifier.padding(top = 3.dp))
     }
 }

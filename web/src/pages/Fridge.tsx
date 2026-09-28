@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type PlanEntry } from '../api'
 import { dayLabel, daysAgo, today } from '../dates'
-import { Button, Empty, PageHeader, Pill, SectionTitle, Shimmer } from '../components/ui'
+import { Button, Empty, PageHeader, SectionTitle, Shimmer } from '../components/ui'
 import { kcal, num, plural, thumb } from '../format'
 import { refreshPlan } from '../plan'
 
@@ -77,9 +77,9 @@ function BatchCard({ batch: b }: { batch: PlanEntry }) {
       <Link to={`/recipes/${b.recipe_id}`} className="relative block h-48">
         {b.image_url && <img src={thumb(b.image_url, 900, 500)} alt="" className="h-full w-full object-cover" />}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent from-40% to-black/75" />
-        <Pill tone={old ? 'amber' : 'paper'} className="absolute left-4 top-4">
+        <span className={`absolute left-4 top-4 rounded-full px-2.5 py-0.5 text-xs font-semibold ${old ? 'bg-pink-deep text-white' : 'bg-white text-black'}`}>
           {old ? `⏰ Eat soon · ${age}d` : age === 0 ? 'Cooked today' : age === 1 ? 'Cooked yesterday' : `Cooked ${age} days ago`}
-        </Pill>
+        </span>
         <h3 className="absolute inset-x-4 bottom-4 line-clamp-2 font-display text-2xl font-bold text-white">{b.title}</h3>
       </Link>
       <div className="p-5">

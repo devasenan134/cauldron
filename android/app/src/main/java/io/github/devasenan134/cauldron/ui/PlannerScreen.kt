@@ -201,11 +201,11 @@ private class PlanActions(
 private fun WeekStrip(week: String, plan: Plan?, page: Int, onWeek: (String) -> Unit, onPage: (Int) -> Unit) {
     Column(Modifier.padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onWeek(addDays(week, -7)) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week", tint = Stone) }
+            IconButton(onClick = { onWeek(addDays(week, -7)) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week", tint = C.muted) }
             Text("${monthDay(week)} – ${monthDay(addDays(week, 6))}", fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = { onWeek(addDays(week, 7)) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week", tint = Stone) }
+            IconButton(onClick = { onWeek(addDays(week, 7)) }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week", tint = C.muted) }
             Spacer(Modifier.weight(1f))
-            if (weekStart(today()) != week) TextButton(onClick = { onWeek(weekStart(today())) }) { Text("Today", color = Ember, fontWeight = FontWeight.SemiBold) }
+            if (weekStart(today()) != week) TextButton(onClick = { onWeek(weekStart(today())) }) { Text("Today", color = C.goText, fontWeight = FontWeight.SemiBold) }
             Chip("Queue · ${plan?.queue?.size ?: 0}", page == QUEUE_PAGE) { onPage(QUEUE_PAGE) }
         }
         Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -219,17 +219,17 @@ private fun WeekStrip(week: String, plan: Plan?, page: Int, onWeek: (String) -> 
 
 @Composable
 private fun DayPill(top: String, big: String, selected: Boolean, today: Boolean, dot: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val bg by animateColorAsState(if (selected) Ink else Paper, label = "day")
-    val fg = if (selected) Cream else Ink
+    val bg by animateColorAsState(if (selected) C.ink else C.surface, label = "day")
+    val fg = if (selected) C.bg else C.ink
     Column(
         modifier.clip(RoundedCornerShape(16.dp)).background(bg)
-            .then(if (today && !selected) Modifier.border(2.dp, EmberBright, RoundedCornerShape(16.dp)) else Modifier)
+            .then(if (today && !selected) Modifier.border(2.dp, C.go, RoundedCornerShape(16.dp)) else Modifier)
             .pressable(onClick, 0.9f).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(top.take(3), fontSize = 11.sp, color = fg.copy(alpha = 0.7f), fontWeight = FontWeight.Medium, maxLines = 1)
         Text(big, fontFamily = Display, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = fg)
-        Box(Modifier.padding(top = 3.dp).size(5.dp).clip(CircleShape).background(if (dot) EmberBright else Color.Transparent))
+        Box(Modifier.padding(top = 3.dp).size(5.dp).clip(CircleShape).background(if (dot) C.go else Color.Transparent))
     }
 }
 
@@ -244,7 +244,7 @@ private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions
                     Text(if (day == null) "Planned, no day yet" else monthDay(day), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (total > 0) Column(horizontalAlignment = Alignment.End) {
-                    Text("%,d".format(total.roundToInt()), style = MaterialTheme.typography.headlineSmall, color = Ember)
+                    Text("%,d".format(total.roundToInt()), style = MaterialTheme.typography.headlineSmall, color = C.goText)
                     Text("kcal", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -264,20 +264,20 @@ private fun AddMealButton(onClick: () -> Unit) {
             .pressable(onClick, 0.97f).padding(18.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.Add, null, tint = Stone)
-        Text("Add a meal", color = Stone, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
+        Icon(Icons.Default.Add, null, tint = C.muted)
+        Text("Add a meal", color = C.muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
 @Composable
 private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier) {
     var menu by remember { mutableStateOf(false) }
-    val accent = when { e.isLeftover -> Sky; e.isBatch -> Amber; else -> Ink }
-    Surface(color = Paper, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
+    val accent = when { e.isLeftover -> C.blueFg; e.isBatch -> C.purpleFg; else -> C.ink }
+    Surface(color = C.surface, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(thumb(e.imageUrl, 200), null, contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(StoneLight)
+                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(C.line)
                         .then(if (e.recipeId != null) Modifier.pressable({ a.openRecipe(e.recipeId) }) else Modifier))
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     if (e.isLeftover || e.isBatch) Text(if (e.isLeftover) "LEFTOVERS" else "BATCH COOK", color = accent, fontSize = 11.sp,
@@ -296,7 +296,7 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
                             if (e.isBatch) DropdownMenuItem(text = { Text("Not a batch") }, onClick = { menu = false; a.setCook(e, null) })
                             else DropdownMenuItem(text = { Text("Batch cook") }, onClick = { menu = false; a.setCook(e, e.servings + 3) })
                         }
-                        DropdownMenuItem(text = { Text(if (e.isBatch) "Remove (and its leftovers)" else "Remove", color = Danger) },
+                        DropdownMenuItem(text = { Text(if (e.isBatch) "Remove (and its leftovers)" else "Remove", color = C.danger) },
                             onClick = { menu = false; a.remove(e) })
                     }
                 }
@@ -304,14 +304,14 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
             Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Stepper(e.servings, { a.setServings(e, it) }, step = 0.5, min = 0.5, label = "eat", showLabel = true)
                 Spacer(Modifier.weight(1f))
-                if (e.isBatch) Stepper(e.cookPortions!!, { a.setCook(e, it) }, min = e.servings, label = "cook", showLabel = true, tint = Amber)
+                if (e.isBatch) Stepper(e.cookPortions!!, { a.setCook(e, it) }, min = e.servings, label = "cook", showLabel = true, tint = C.purpleFg)
             }
             if (e.isBatch) {
                 val left = e.portionsLeft ?: 0.0
                 Text(
                     if (left < 0) "${num(-left)} more planned than cooked" else "${plural(left, "portion")} left for later",
-                    color = if (left < 0) Danger else Amber, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().background(AmberSoft, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = if (left < 0) C.danger else C.purpleFg, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().background(C.purpleBg, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
         }
@@ -330,7 +330,7 @@ private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) ->
     LaunchedEffect(Unit) { runCatching { app.store.loadBatches() } }
     val dayJson = day?.let { JsonPrimitive(it) } ?: JsonNull
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
         Text("Add to ${if (day == null) "the queue" else dayChipLabel(day)}", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
         Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip("Recipes", tab == 0) { tab = 0 }
@@ -363,20 +363,20 @@ private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) ->
 @Composable
 private fun PickRow(image: String?, title: String, trailing: String?, sub: String? = null, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().pressable(onClick, 0.98f).padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(thumb(image, 120), null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(StoneLight))
+        AsyncImage(thumb(image, 120), null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(C.line))
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         trailing?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Icon(Icons.Default.Add, null, tint = EmberBright, modifier = Modifier.padding(start = 8.dp))
+        Icon(Icons.Default.Add, null, tint = C.go, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MoveSheet(entry: PlanEntry, week: String, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Cream) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
         Text("Move to…", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
         Text(entry.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp))
         Spacer(Modifier.height(16.dp))
@@ -395,12 +395,12 @@ private fun GroceryDialog(week: String, onDismiss: () -> Unit, onMake: (Boolean)
             Column {
                 Text("Build the list from this week's meals (${monthDay(week)} – ${monthDay(addDays(week, 6))}). Items you added by hand stay.")
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp).clickable { includeQueue = !includeQueue }) {
-                    Checkbox(includeQueue, { includeQueue = it }, colors = CheckboxDefaults.colors(checkedColor = EmberBright))
+                    Checkbox(includeQueue, { includeQueue = it }, colors = CheckboxDefaults.colors(checkedColor = C.go))
                     Text("Include the queue")
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onMake(includeQueue) }) { Text("Make list", color = Ember, fontWeight = FontWeight.Bold) } },
+        confirmButton = { TextButton(onClick = { onMake(includeQueue) }) { Text("Make list", color = C.goText, fontWeight = FontWeight.Bold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

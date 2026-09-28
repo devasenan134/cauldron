@@ -111,14 +111,14 @@ fun HeaderRow(title: String, subtitle: String) {
 
 @Composable
 fun SearchPill(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "Search recipes or ingredients") {
-    Surface(color = Paper, shape = RoundedCornerShape(50), modifier = modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(50), ambientColor = Ink.copy(alpha = 0.2f), spotColor = Ink.copy(alpha = 0.2f))) {
+    Surface(color = C.surface, shape = RoundedCornerShape(50), modifier = modifier.fillMaxWidth().shadow(6.dp, RoundedCornerShape(50), ambientColor = C.ink.copy(alpha = 0.2f), spotColor = C.ink.copy(alpha = 0.2f))) {
         Row(Modifier.padding(start = 18.dp, end = 6.dp).height(54.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Search, null, tint = Stone)
+            Icon(Icons.Default.Search, null, tint = C.muted)
             Box(Modifier.weight(1f).padding(start = 12.dp)) {
-                if (value.isEmpty()) Text(placeholder, color = Stone.copy(alpha = 0.8f))
-                BasicTextField(value, onChange, singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Ink), cursorBrush = SolidColor(Ember), modifier = Modifier.fillMaxWidth())
+                if (value.isEmpty()) Text(placeholder, color = C.muted.copy(alpha = 0.8f))
+                BasicTextField(value, onChange, singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = C.ink), cursorBrush = SolidColor(C.goText), modifier = Modifier.fillMaxWidth())
             }
-            if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Default.Close, "Clear search", tint = Stone) }
+            if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Default.Close, "Clear search", tint = C.muted) }
         }
     }
 }
@@ -147,22 +147,22 @@ private fun CategoryRow(
 @Composable
 fun Chip(text: String, selected: Boolean, icon: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(if (selected) Ink else Paper).pressable(onClick, 0.93f).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.clip(RoundedCornerShape(50)).background(if (selected) C.ink else C.surface).pressable(onClick, 0.93f).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon) Icon(Icons.Default.Public, null, tint = if (selected) Cream else Stone, modifier = Modifier.size(16.dp).padding(end = 0.dp))
-        Text(text, color = if (selected) Cream else Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = if (icon) 6.dp else 0.dp))
+        if (icon) Icon(Icons.Default.Public, null, tint = if (selected) C.bg else C.muted, modifier = Modifier.size(16.dp).padding(end = 0.dp))
+        Text(text, color = if (selected) C.bg else C.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = if (icon) 6.dp else 0.dp))
     }
 }
 
 @Composable
 private fun RecipeCard(r: RecipeSummary, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.pressable(onClick)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(StoneLight)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(C.line)) {
             AsyncImage(thumb(r.imageUrl, 480, 480), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             r.kcalPerServing?.let {
                 Text(
-                    "${it.roundToInt()} kcal", color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    "${it.roundToInt()} kcal", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp,
                     modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }

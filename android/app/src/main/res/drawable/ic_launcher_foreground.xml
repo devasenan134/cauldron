@@ -6,8 +6,8 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <!-- steam bubbles -->
-    <path android:fillColor="#C2410C" android:pathData="M50,31a4,4 0,1 1,8 0a4,4 0,1 1,-8 0z" />
-    <path android:fillColor="#C2410C" android:pathData="M58,24a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0z" />
+    <path android:fillColor="#4CC734" android:pathData="M50,31a4,4 0,1 1,8 0a4,4 0,1 1,-8 0z" />
+    <path android:fillColor="#4CC734" android:pathData="M58,24a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0z" />
     <!-- pot body -->
     <path android:fillColor="#1F1B16"
         android:pathData="M31,46 L77,46 C80,52 81,57 81,61 C81,73 69,81 54,81 C39,81 27,73 27,61 C27,57 28,52 31,46z" />
@@ -18,5 +18,5 @@
     <path android:fillColor="#1F1B16" android:pathData="M36,77 L42,77 L40,86 L37,86z" />
     <path android:fillColor="#1F1B16" android:pathData="M66,77 L72,77 L71,86 L68,86z" />
     <!-- glow -->
-    <path android:fillColor="#C2410C" android:pathData="M40,56 C44,54 64,54 68,56 C68,60 62,63 54,63 C46,63 40,60 40,56z" />
+    <path android:fillColor="#4CC734" android:pathData="M40,56 C44,54 64,54 68,56 C68,60 62,63 54,63 C46,63 40,60 40,56z" />
 </vector>

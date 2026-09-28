@@ -68,7 +68,7 @@ fun dayChipLabel(day: String?): String = when (day) {
 @Composable
 fun Stepper(
     value: Double, onChange: (Double) -> Unit, step: Double = 1.0, min: Double = step,
-    label: String? = null, tint: Color = Ink, big: Boolean = false, showLabel: Boolean = false,
+    label: String? = null, tint: Color = C.ink, big: Boolean = false, showLabel: Boolean = false,
 ) {
     val tick = rememberTick()
     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -35,6 +35,7 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     })
     suspend fun me(): Me = get("/auth/me")
     suspend fun setKcalGoal(kcal: Int): Me = patch("/auth/me", buildJsonObject { put("kcal_goal", kcal) })
+    suspend fun setTheme(theme: String): Me = patch("/auth/me", buildJsonObject { put("theme", theme) })
     suspend fun signOut() { post<JsonElement>("/auth/logout", JsonObject(emptyMap())) }
 
     // --- recipes

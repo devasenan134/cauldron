@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { api } from '../api'
-import { useMe, useSignOut } from '../auth'
+import { api, type Me } from '../api'
+import { ME, useMe, useSignOut } from '../auth'
 import { Button, PageHeader, SectionTitle } from '../components/ui'
 import { GoalDialog } from './Home'
 
@@ -11,6 +11,13 @@ export default function Settings() {
   const app = useQuery({ queryKey: ['app-latest'], queryFn: api.appLatest })
   const [editingGoal, setEditingGoal] = useState(false)
   const goal = me?.kcal_goal ?? 2200
+  const qc = useQueryClient()
+  const setTheme = useMutation({
+    mutationFn: api.setTheme,
+    // Switch at once; the server's answer follows.
+    onMutate: (theme) => qc.setQueryData<Me | null>(ME, (m) => m && { ...m, theme }),
+    onSuccess: (m) => qc.setQueryData(ME, m),
+  })
 
   return (
     <div className="rise mx-auto max-w-2xl">
@@ -19,7 +26,7 @@ export default function Settings() {
       <SectionTitle>Account</SectionTitle>
       <Card>
         <div className="flex items-center gap-4">
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-ink font-display text-2xl font-bold text-cream">
+          <div className="grid h-14 w-14 place-items-center rounded-full bg-sand font-display text-2xl font-bold">
             {(me?.name || me?.email || '?').charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
@@ -28,6 +35,20 @@ export default function Settings() {
             {me?.is_owner && <p className="text-sm font-semibold text-ember">Owner</p>}
           </div>
           <Button variant="ghost" onClick={() => signOut.mutate()}>Sign out</Button>
+        </div>
+      </Card>
+
+      <SectionTitle>Appearance</SectionTitle>
+      <Card>
+        <p className="font-semibold">Theme</p>
+        <p className="text-sm text-stone-500">Saved to your account, so the app follows too</p>
+        <div className="mt-3 flex rounded-full bg-sand p-1">
+          {(['system', 'light', 'dark'] as const).map((t) => (
+            <button key={t} onClick={() => setTheme.mutate(t)}
+              className={`press flex-1 rounded-full py-2.5 text-sm capitalize transition-colors ${me?.theme === t ? 'bg-paper font-bold shadow-sm' : 'font-medium text-stone-500'}`}>
+              {t}
+            </button>
+          ))}
         </div>
       </Card>
 
@@ -72,4 +93,4 @@ export default function Settings() {
   )
 }
 
-const Card = ({ children }: { children: ReactNode }) => <div className="rounded-3xl bg-paper p-5">{children}</div>
+const Card = ({ children }: { children: ReactNode }) => <div className="rounded-3xl bg-paper p-5 ring-1 ring-stone-200">{children}</div>

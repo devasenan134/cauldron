@@ -99,7 +99,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
         if (todays.size > 1) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 SectionLabel("Today's meals")
-                Surface(color = Paper, shape = RoundedCornerShape(20.dp)) {
+                Surface(color = C.surface, shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(vertical = 6.dp)) { todays.forEach { MealRow(it) { it.recipeId?.let(openRecipe) } } }
                 }
             }
@@ -107,7 +107,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
 
         if (oldBatches.isNotEmpty()) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionLabel("In the fridge") { TextButton(onClick = { openTab("fridge") }) { Text("See all", color = Ember) } }
+                SectionLabel("In the fridge") { TextButton(onClick = { openTab("fridge") }) { Text("See all", color = C.goText) } }
                 oldBatches.take(3).forEach { b -> FridgeAlert(b) { openTab("fridge") } }
             }
         }
@@ -125,7 +125,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit) {
         if (todays.isNotEmpty() && tomorrows.isNotEmpty()) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 SectionLabel("Tomorrow")
-                Surface(color = Paper, shape = RoundedCornerShape(20.dp)) {
+                Surface(color = C.surface, shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(vertical = 6.dp)) { tomorrows.forEach { MealRow(it) { it.recipeId?.let(openRecipe) } } }
                 }
             }
@@ -143,13 +143,13 @@ private fun greeting(): String = when (LocalTime.now().hour) {
 
 @Composable
 private fun Hero(e: PlanEntry, label: String, more: Int, onClick: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(280.dp).clip(RoundedCornerShape(28.dp)).background(Ink).pressable(onClick, 0.98f)) {
+    Box(Modifier.fillMaxWidth().height(280.dp).clip(RoundedCornerShape(28.dp)).background(C.surfaceAlt).pressable(onClick, 0.98f)) {
         AsyncImage(thumb(e.imageUrl, 900, 700), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.85f))))
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Pill(label, color = Color.White, background = EmberBright)
-            if (e.isLeftover) Pill("LEFTOVERS", color = Ink, background = Color.White)
-            if (e.isBatch) Pill("BATCH · ${num(e.cookPortions ?: 0.0)}", color = Ink, background = Color.White)
+            Pill(label, color = Color.White, background = Color.Black.copy(alpha = 0.55f))
+            if (e.isLeftover) Pill("LEFTOVERS", color = Color.Black, background = Color.White)
+            if (e.isBatch) Pill("BATCH · ${num(e.cookPortions ?: 0.0)}", color = Color.Black, background = Color.White)
         }
         Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
             Text(e.title, color = Color.White, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -164,12 +164,12 @@ private fun Hero(e: PlanEntry, label: String, more: Int, onClick: () -> Unit) {
 
 @Composable
 private fun EmptyHero(onFind: () -> Unit) {
-    Surface(color = Ink, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = C.ink, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp)) {
             Text("🍲", fontSize = 40.sp)
-            Text("Nothing planned today", color = Cream, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
-            Text("Pick something tasty and put it on the plan.", color = Cream.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
-            Button(onClick = onFind, colors = ButtonDefaults.buttonColors(containerColor = EmberBright), modifier = Modifier.padding(top = 16.dp)) {
+            Text("Nothing planned today", color = C.bg, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
+            Text("Pick something tasty and put it on the plan.", color = C.bg.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
+            Button(onClick = onFind, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo), modifier = Modifier.padding(top = 16.dp)) {
                 Text("Find a recipe", fontWeight = FontWeight.SemiBold)
             }
         }
@@ -181,16 +181,16 @@ private fun CaloriesCard(eaten: Double, goal: Int, modifier: Modifier, onEditGoa
     val shown by animateIntAsState(eaten.roundToInt(), tween(700), label = "kcal")
     val fraction by animateFloatAsState((eaten / goal).toFloat().coerceIn(0f, 1f), tween(900), label = "bar")
     val over = eaten > goal
-    Surface(color = Paper, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().pressable(onEditGoal, 0.98f)) {
+    Surface(color = C.surface, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().pressable(onEditGoal, 0.98f)) {
         Column(Modifier.padding(20.dp)) {
             Text("Today's calories", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             Row(verticalAlignment = Alignment.Bottom) {
-                Text("%,d".format(shown), style = MaterialTheme.typography.displaySmall, color = if (over) Danger else Ink)
+                Text("%,d".format(shown), style = MaterialTheme.typography.displaySmall, color = if (over) C.danger else C.ink)
                 Text("  / ${"%,d".format(goal)} kcal", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
             }
-            Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(14.dp).clip(RoundedCornerShape(50)).background(EmberSoft)) {
+            Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(12.dp).clip(RoundedCornerShape(50)).background(C.line)) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).clip(RoundedCornerShape(50))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFFFB923C), if (over) Danger else EmberBright))))
+                    .background(if (over) C.danger else C.go))
             }
             val left = goal - eaten
             Text(
@@ -210,7 +210,7 @@ private fun MealRow(e: PlanEntry, onClick: () -> Unit) {
             Text(when { e.isLeftover -> "Leftovers"; e.isBatch -> "Batch · cook ${num(e.cookPortions ?: 0.0)}"; else -> plural(e.servings, "serving") },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        e.kcal?.let { Text("${it.roundToInt()}", fontFamily = Display, fontWeight = FontWeight.Bold, color = Ember) }
+        e.kcal?.let { Text("${it.roundToInt()}", fontFamily = Display, fontWeight = FontWeight.Bold, color = C.goText) }
     }
 }
 
@@ -218,17 +218,17 @@ private fun MealRow(e: PlanEntry, onClick: () -> Unit) {
 private fun FridgeAlert(b: PlanEntry, onClick: () -> Unit) {
     val age = daysAgo(b.day!!)
     val soon = age >= 3
-    Surface(color = if (soon) AmberSoft else Paper, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).pressable(onClick, 0.98f)) {
+    Surface(color = if (soon) C.pinkBg else C.surface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).pressable(onClick, 0.98f)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(thumb(b.imageUrl, 120), null, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)))
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(b.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(if (soon) "Cooked $age days ago · eat soon" else if (age == 0L) "Cooked today" else "Cooked ${plural(age.toDouble(), "day")} ago",
-                    style = MaterialTheme.typography.bodySmall, color = if (soon) Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall, color = if (soon) C.pinkFg else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = if (soon) FontWeight.SemiBold else FontWeight.Normal)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.headlineSmall, color = Ink)
+                Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.headlineSmall, color = C.ink)
                 Text("left", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -237,7 +237,7 @@ private fun FridgeAlert(b: PlanEntry, onClick: () -> Unit) {
 
 @Composable
 private fun Tile(emoji: String, title: String, sub: String, modifier: Modifier, onClick: () -> Unit) {
-    Surface(color = Paper, shape = RoundedCornerShape(22.dp), modifier = modifier.pressable(onClick)) {
+    Surface(color = C.surface, shape = RoundedCornerShape(22.dp), modifier = modifier.pressable(onClick)) {
         Column(Modifier.padding(16.dp)) {
             Text(emoji, fontSize = 26.sp)
             Spacer(Modifier.height(8.dp))
@@ -257,7 +257,7 @@ fun GoalDialog(goal: Int, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
             OutlinedTextField(text, { text = it.filter(Char::isDigit).take(5) }, singleLine = true, suffix = { Text("kcal") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         },
-        confirmButton = { TextButton(onClick = { text.toIntOrNull()?.takeIf { it in 500..10000 }?.let(onSave) }) { Text("Save", color = Ember) } },
+        confirmButton = { TextButton(onClick = { text.toIntOrNull()?.takeIf { it in 500..10000 }?.let(onSave) }) { Text("Save", color = C.goText) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

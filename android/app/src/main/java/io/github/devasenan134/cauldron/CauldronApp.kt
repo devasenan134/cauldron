@@ -47,6 +47,12 @@ class CauldronApp : Application() {
     /** The daily calorie goal is saved on the server, so the website shows the same one. */
     suspend fun setKcalGoal(kcal: Int) = session.updateMe(api.setKcalGoal(kcal))
 
+    /** "system", "light" or "dark"; saved on the account so the website follows too. Shown at once. */
+    suspend fun setTheme(theme: String) {
+        (session.state.value as? Session.State.SignedIn)?.me?.let { session.updateMe(it.copy(theme = theme)) }
+        runCatching { session.updateMe(api.setTheme(theme)) }
+    }
+
     suspend fun signOutLocally() {
         grocery.clear()
         store.clear()

@@ -16,8 +16,8 @@ android {
         applicationId = "io.github.devasenan134.cauldron"
         minSdk = 28
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.3.1"
+        versionCode = 7
+        versionName = "0.4.0"
 
         // -PapiUrl=http://10.0.2.2:8766 points a build at a local test server.
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://cauldron.craftingtable.cc"}\"")

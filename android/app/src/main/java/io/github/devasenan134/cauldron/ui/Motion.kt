@@ -55,7 +55,7 @@ fun Shimmer(modifier: Modifier, shape: Shape) {
     Box(
         modifier.clip(shape).background(
             Brush.linearGradient(
-                listOf(Color(0xFFEFE9E0), Color(0xFFF8F4EE), Color(0xFFEFE9E0)),
+                listOf(C.surfaceAlt, C.surface, C.surfaceAlt),
                 start = Offset(x * 600f, 0f), end = Offset(x * 600f + 600f, 300f),
             ),
         ),

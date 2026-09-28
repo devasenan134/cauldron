@@ -17,7 +17,7 @@ const SOURCE_NOTE: Record<string, string> = {
 }
 
 // Protein, carbs and fat: the same colours as the app.
-const MACRO = { protein: '#60a5fa', carbs: '#fbbf24', fat: '#fb923c' }
+const MACRO = { protein: '#60a5fa', carbs: '#fbbf24', fat: '#f472b6' }
 
 export default function RecipeDetail() {
   const id = Number(useParams().id)
@@ -74,7 +74,7 @@ export default function RecipeDetail() {
           {r.can_edit && <p className="mb-3 text-sm text-stone-500">Click a weight to correct it, or a food to change what it's counted as.</p>}
           {[...groups].map(([group, ings]) => (
             <div key={group} className="mb-4">
-              {group && <h3 className="mb-2 ml-1 text-xs font-bold uppercase tracking-widest text-ember">{group}</h3>}
+              {group && <h3 className="mb-2 ml-1 text-xs font-bold uppercase tracking-widest text-stone-500">{group}</h3>}
               <ul className="divide-y divide-stone-100 rounded-3xl bg-paper">
                 {ings.map((ing) => <IngredientRow key={ing.id} ing={ing} recipeId={r.id} editable={r.can_edit} />)}
               </ul>
@@ -86,7 +86,7 @@ export default function RecipeDetail() {
           <ol className="space-y-3">
             {r.steps.map((s, i) => (
               <li key={s.id} className="flex gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ember-bright font-display font-bold text-white">{i + 1}</span>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink font-display font-bold text-cream">{i + 1}</span>
                 <div className="flex-1 rounded-3xl bg-paper p-5">
                   {s.title && <p className="font-display text-lg font-bold">{s.title}</p>}
                   <p className="mt-1 whitespace-pre-line leading-relaxed text-stone-700">{s.text}</p>
@@ -107,11 +107,11 @@ function NutritionCard({ r }: { r: Recipe }) {
   const parts = { protein: m.protein * 4, carbs: m.carbs * 4, fat: m.fat * 9 }
   const total = parts.protein + parts.carbs + parts.fat || 1
   return (
-    <div className="mt-6 rounded-3xl bg-ink p-6 text-cream">
-      <p className="text-sm text-cream/60">{n.per_serving ? `Per serving · recipe makes ${num(r.servings ?? 1)}` : 'Whole recipe'}</p>
+    <div className="mt-6 rounded-3xl bg-paper p-6 ring-1 ring-stone-200">
+      <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">{n.per_serving ? `Per serving · recipe makes ${num(r.servings ?? 1)}` : 'Whole recipe'}</p>
       <p className="mt-1 flex items-baseline gap-2">
-        <span className="font-display text-5xl font-extrabold text-white">{Math.round(m.kcal).toLocaleString()}</span>
-        <span className="text-cream/60">kcal</span>
+        <span className="font-display text-5xl font-extrabold">{Math.round(m.kcal).toLocaleString()}</span>
+        <span className="text-stone-500">kcal</span>
       </p>
       <div className="mt-4 flex h-2.5 overflow-hidden rounded-full">
         {(Object.keys(parts) as (keyof typeof parts)[]).map((k) => (
@@ -123,15 +123,15 @@ function NutritionCard({ r }: { r: Recipe }) {
           <div key={k} className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full" style={{ background: MACRO[k] }} />
             <div>
-              <p className="font-display text-lg font-bold text-white">{Math.round(g)} g</p>
-              <p className="text-xs text-cream/60">{label}</p>
+              <p className="font-display text-lg font-bold">{Math.round(g)} g</p>
+              <p className="text-xs text-stone-500">{label}</p>
             </div>
           </div>
         ))}
       </div>
-      {n.per_serving && <p className="mt-4 text-xs text-cream/50">Whole recipe: {kcal(n.total.kcal)}</p>}
-      {n.left_out.length > 0 && <p className="mt-1 text-xs text-orange-300">Not counted (no amount): {n.left_out.join(', ')}</p>}
-      {n.estimated.length > 0 && <p className="mt-1 text-xs text-cream/50">Estimated: {n.estimated.join(', ')}</p>}
+      {n.per_serving && <p className="mt-4 text-xs text-stone-500">Whole recipe: {kcal(n.total.kcal)}</p>}
+      {n.left_out.length > 0 && <p className="mt-1 text-xs text-pink-deep">Not counted (no amount): {n.left_out.join(', ')}</p>}
+      {n.estimated.length > 0 && <p className="mt-1 text-xs text-stone-400">Estimated: {n.estimated.join(', ')}</p>}
     </div>
   )
 }
@@ -168,7 +168,7 @@ function AddToPlan({ r }: { r: Recipe }) {
         {extra > 0 ? `🥡 Batch cook: ${plural(extra, 'portion')} go${extra === 1 ? 'es' : ''} in the fridge for later.` : 'Cook more than you eat to batch cook, and the rest goes in the fridge.'}
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button onClick={() => add.mutate()} disabled={add.isPending} className="px-8 py-3 text-base">
+        <Button variant="accent" onClick={() => add.mutate()} disabled={add.isPending} className="px-8 py-3 text-base">
           {day === null ? 'Add to queue' : `Add to ${dayChipLabel(day)}`}
         </Button>
         {add.isSuccess && <Link to="/planner" className="rise font-semibold text-ember hover:underline">Added ✓ Open plan →</Link>}

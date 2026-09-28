@@ -116,7 +116,7 @@ fun FridgeScreen(openRecipe: (Int) -> Unit) {
                     val gone = b.portionsLeft ?: 0.0
                     store.editEntry(b.id) { it.copy(portionsLeft = 0.0, discarded = it.discarded + gone) }
                     act(null) { app.api.updateEntry(b.id, buildJsonObject { put("discarded", b.discarded + gone) }) }
-                }) { Text("Toss", color = Danger, fontWeight = FontWeight.Bold) }
+                }) { Text("Toss", color = C.danger, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { tossing = null }) { Text("Keep") } },
         )
@@ -129,14 +129,14 @@ private fun BatchCard(b: PlanEntry, modifier: Modifier, open: () -> Unit, onAte:
     val old = age >= EAT_SOON_DAYS
     val left = b.portionsLeft ?: 0.0
     val made = b.cookPortions ?: 0.0
-    Surface(color = Paper, shape = RoundedCornerShape(28.dp), modifier = modifier.fillMaxWidth()) {
+    Surface(color = C.surface, shape = RoundedCornerShape(28.dp), modifier = modifier.fillMaxWidth()) {
         Column {
             Box(Modifier.fillMaxWidth().height(170.dp).pressable(open, 0.99f)) {
-                AsyncImage(thumb(b.imageUrl, 900, 500), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(StoneLight))
+                AsyncImage(thumb(b.imageUrl, 900, 500), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(C.line))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))))
                 Pill(
                     if (old) "⏰ Eat soon · ${age}d" else when (age) { 0L -> "Cooked today"; 1L -> "Cooked yesterday"; else -> "Cooked $age days ago" },
-                    color = if (old) Color.White else Ink, background = if (old) Amber else Color.White, modifier = Modifier.padding(14.dp),
+                    color = if (old) Color.White else Color.Black, background = if (old) C.pinkFg else Color.White, modifier = Modifier.padding(14.dp),
                 )
                 Text(b.title, color = Color.White, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.align(Alignment.BottomStart).padding(16.dp))
@@ -148,11 +148,11 @@ private fun BatchCard(b: PlanEntry, modifier: Modifier, open: () -> Unit, onAte:
                 }
                 PortionDots(left, made)
                 Row(Modifier.padding(top = 14.dp)) {
-                    Button(onClick = onAte, enabled = left > 0, colors = ButtonDefaults.buttonColors(containerColor = EmberBright), modifier = Modifier.weight(1f).height(48.dp)) {
+                    Button(onClick = onAte, enabled = left > 0, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo), modifier = Modifier.weight(1f).height(48.dp)) {
                         Text("Ate one", fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedButton(onClick = onToss, modifier = Modifier.weight(1f).height(48.dp)) { Text("Toss the rest", color = Ink, fontWeight = FontWeight.SemiBold) }
+                    OutlinedButton(onClick = onToss, modifier = Modifier.weight(1f).height(48.dp)) { Text("Toss the rest", color = C.ink, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
@@ -166,23 +166,23 @@ private fun PortionDots(left: Double, made: Double) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 10.dp)) {
         repeat(total) { i ->
             val full = i < left
-            Box(Modifier.size(14.dp).clip(CircleShape).background(if (full) EmberBright else Color.Transparent)
-                .border(2.dp, if (full) EmberBright else StoneLight, CircleShape))
+            Box(Modifier.size(14.dp).clip(CircleShape).background(if (full) C.go else Color.Transparent)
+                .border(2.dp, if (full) C.go else C.line, CircleShape))
         }
     }
 }
 
 @Composable
 private fun ComingRow(b: PlanEntry, modifier: Modifier, open: () -> Unit) {
-    Surface(color = Paper, shape = RoundedCornerShape(20.dp), modifier = modifier.fillMaxWidth().pressable(open, 0.98f)) {
+    Surface(color = C.surface, shape = RoundedCornerShape(20.dp), modifier = modifier.fillMaxWidth().pressable(open, 0.98f)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(thumb(b.imageUrl, 140), null, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(StoneLight))
+            AsyncImage(thumb(b.imageUrl, 140), null, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(C.line))
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(b.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(b.day?.let { "Cooking ${weekdayShort(it)} ${monthDay(it)}" } ?: "In the queue", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.titleLarge, color = Amber)
+                Text(num(b.portionsLeft ?: 0.0), style = MaterialTheme.typography.titleLarge, color = C.purpleFg)
                 Text("for later", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -1,19 +1,67 @@
 @import "tailwindcss";
 
+/*
+ * Colours live in variables with a light and a dark set (the same values as the app's
+ * ui/Theme.kt). The theme setting puts data-theme on <html>; without it, the device decides.
+ * Tailwind's colour names map onto them, so `bg-paper`, `text-stone-500` etc. follow the theme.
+ */
+:root {
+  --bg: #f7f7f7; --surface: #ffffff; --surface-alt: #f0f0f0;
+  --ink: #0a0a0a; --muted: #707070; --faint: #a3a3a3; --line: #e5e5e5;
+  --go: #4cc734; --on-go: #ffffff; --go-text: #2f7d1f; --go-soft: #e3f4dc;
+  --blue-bg: #dfeaf4; --blue-fg: #2f6694; --purple-bg: #ece6fa; --purple-fg: #6a48c2;
+  --pink-bg: #fae3ec; --pink-fg: #c2386b; --danger: #d92d20;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b0c; --surface: #161618; --surface-alt: #1f1f22;
+  --ink: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --line: #27272a;
+  --go: #5fd543; --on-go: #0b0b0c; --go-text: #86d96f; --go-soft: #1b2b17;
+  --blue-bg: #16263a; --blue-fg: #7fb2e6; --purple-bg: #231d36; --purple-fg: #b59cf5;
+  --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0b0c; --surface: #161618; --surface-alt: #1f1f22;
+    --ink: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --line: #27272a;
+    --go: #5fd543; --on-go: #0b0b0c; --go-text: #86d96f; --go-soft: #1b2b17;
+    --blue-bg: #16263a; --blue-fg: #7fb2e6; --purple-bg: #231d36; --purple-fg: #b59cf5;
+    --pink-bg: #34182a; --pink-fg: #f28ab5; --danger: #f97066;
+    color-scheme: dark;
+  }
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, sans-serif;
-  --color-ink: #1f1b16;
-  --color-cream: #faf6f0;
-  --color-paper: #ffffff;
-  --color-ember: #c2410c;
-  --color-ember-bright: #ea580c;
-  --color-ember-soft: #ffeddf;
-  --color-amber-deep: #b45309;
-  --color-amber-soft: #fff7e6;
-  --color-sky-deep: #0369a1;
-  --color-sky-soft: #eaf6fd;
-  --color-sand: #f1ece4;
+  --font-display: "Inter Tight", "Inter", ui-sans-serif, sans-serif;
+  --color-cream: var(--bg);
+  --color-paper: var(--surface);
+  --color-sand: var(--surface-alt);
+  --color-ink: var(--ink);
+  --color-ember: var(--go-text);
+  --color-ember-bright: var(--go);
+  --color-ember-soft: var(--go-soft);
+  --color-amber-deep: var(--purple-fg);
+  --color-amber-soft: var(--purple-bg);
+  --color-sky-deep: var(--blue-fg);
+  --color-sky-soft: var(--blue-bg);
+  --color-pink-deep: var(--pink-fg);
+  --color-pink-soft: var(--pink-bg);
+  --color-on-go: var(--on-go);
+  --color-danger: var(--danger);
+  /* the greys used around the site */
+  --color-stone-100: var(--surface-alt);
+  --color-stone-200: var(--line);
+  --color-stone-300: var(--line);
+  --color-stone-400: var(--faint);
+  --color-stone-500: var(--muted);
+  --color-stone-600: var(--muted);
+  --color-stone-700: var(--muted);
+  --color-stone-800: var(--ink);
+  --color-red-300: var(--danger);
+  --color-red-600: var(--danger);
+  --color-red-700: var(--danger);
 }
 
 body {
@@ -22,7 +70,7 @@ body {
 
 /* Headings and big numbers: the app's display face. */
 .font-display {
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
 }
 
 /* A press that springs down a little, like the app. */
@@ -49,7 +97,7 @@ body {
   to { background-position: 200% 0; }
 }
 @utility shimmer {
-  background: linear-gradient(90deg, #efe9e0 25%, #f8f4ee 50%, #efe9e0 75%);
+  background: linear-gradient(90deg, var(--surface-alt) 25%, var(--surface) 50%, var(--surface-alt) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.2s linear infinite;
 }
