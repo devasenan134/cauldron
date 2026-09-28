@@ -16,15 +16,15 @@ android {
         applicationId = "io.github.devasenan134.cauldron"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
 
         // -PapiUrl=http://10.0.2.2:8766 points a build at a local test server.
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://cauldron.craftingtable.cc"}\"")
         // Google sign-in asks for an ID token meant for the server (its "web" OAuth client), which the
         // server checks. Not a secret: the website hands it to every visitor too.
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID",
-            "\"263552377306-jaj3fejmdf2kla6dskjsa8m9ps5frfr9.apps.googleusercontent.com\"")
+            "\"880824039451-klph2c1nnqmtp52ai5ma9j1eqj134ke2.apps.googleusercontent.com\"")
     }
 
     signingConfigs {
