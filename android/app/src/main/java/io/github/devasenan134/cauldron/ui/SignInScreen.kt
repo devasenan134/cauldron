@@ -56,7 +56,10 @@ fun SignInScreen() {
                 scope.launch {
                     try {
                         val idToken = googleIdToken(context)
-                        if (idToken != null) app.session.signedIn(app.api.signIn(idToken))
+                        if (idToken != null) {
+                            app.session.signedIn(app.api.signIn(idToken))
+                            app.scope.launch { app.updates.checkNowAndThen() }
+                        }
                     } catch (e: ApiException) {
                         error = if (e.code == 403 && "guest list" in (e.message ?: ""))
                             "This Google account isn't on Cauldron's guest list. Ask the owner to add it."

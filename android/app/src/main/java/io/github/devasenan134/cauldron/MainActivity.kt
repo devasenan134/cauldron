@@ -42,7 +42,10 @@ import io.github.devasenan134.cauldron.ui.GroceryScreen
 import io.github.devasenan134.cauldron.ui.PlannerScreen
 import io.github.devasenan134.cauldron.ui.RecipeScreen
 import io.github.devasenan134.cauldron.ui.RecipesScreen
+import io.github.devasenan134.cauldron.ui.LocalOpenSettings
+import io.github.devasenan134.cauldron.ui.SettingsScreen
 import io.github.devasenan134.cauldron.ui.SignInScreen
+import androidx.compose.runtime.CompositionLocalProvider
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,6 +80,7 @@ private fun AppRoot() {
     val app = io.github.devasenan134.cauldron.ui.app()
     val toBuy = app.grocery.items.collectAsState().value.count { !it.checked }
 
+    CompositionLocalProvider(LocalOpenSettings provides { nav.navigate("settings") { launchSingleTop = true } }) {
     Scaffold(
         containerColor = Cream,
         bottomBar = {
@@ -116,6 +120,8 @@ private fun AppRoot() {
             }
             composable(Tab.Fridge.route) { FridgeScreen(openRecipe = { nav.navigate("recipe/$it") }) }
             composable(Tab.Grocery.route) { GroceryScreen(openPlan = { nav.navigate(Tab.Plan.route) }) }
+            composable("settings") { SettingsScreen(back = { nav.popBackStack() }) }
         }
+    }
     }
 }
