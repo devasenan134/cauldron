@@ -62,6 +62,10 @@ export type PlanEntry = {
   servings: number
   kcal_per_serving: number | null
   kcal: number | null
+  cook_portions: number | null
+  portions_left: number | null
+  discarded: number
+  leftover_of: number | null
 }
 
 export type Plan = { days: Record<string, PlanEntry[]>; queue: PlanEntry[] }
@@ -114,10 +118,27 @@ export const api = {
   foods: (q: string) => request<Food[]>('GET', `/foods?${qs({ q })}`),
 
   plan: (start: string, days = 7) => request<Plan>('GET', `/plan?${qs({ start, days })}`),
-  addEntry: (e: { day: string | null; recipe_id?: number; title?: string; servings?: number; position?: number }) =>
-    request<PlanEntry>('POST', '/plan', e),
-  updateEntry: (id: number, patch: { day?: string | null; position?: number; servings?: number; title?: string }) =>
-    request<PlanEntry>('PATCH', `/plan/${id}`, patch),
+  addEntry: (e: {
+    day: string | null
+    recipe_id?: number
+    leftover_of?: number
+    title?: string
+    servings?: number
+    cook_portions?: number | null
+    position?: number
+  }) => request<PlanEntry>('POST', '/plan', e),
+  updateEntry: (
+    id: number,
+    patch: {
+      day?: string | null
+      position?: number
+      servings?: number
+      title?: string
+      cook_portions?: number | null
+      discarded?: number
+    },
+  ) => request<PlanEntry>('PATCH', `/plan/${id}`, patch),
+  batches: () => request<PlanEntry[]>('GET', '/batches'),
   deleteEntry: (id: number) => request<{ ok: boolean }>('DELETE', `/plan/${id}`),
 
   grocery: () => request<GroceryItem[]>('GET', '/grocery'),

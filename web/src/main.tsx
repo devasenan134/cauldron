@@ -7,6 +7,7 @@ import { ME } from './auth.ts'
 import AuthGate from './components/AuthGate.tsx'
 import Layout from './components/Layout.tsx'
 import './index.css'
+import Fridge from './pages/Fridge.tsx'
 import Grocery from './pages/Grocery.tsx'
 import Planner from './pages/Planner.tsx'
 import RecipeDetail from './pages/RecipeDetail.tsx'
@@ -35,6 +36,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="recipes" element={<Recipes />} />
               <Route path="recipes/:id" element={<RecipeDetail />} />
               <Route path="planner" element={<Planner />} />
+              <Route path="fridge" element={<Fridge />} />
               <Route path="grocery" element={<Grocery />} />
             </Route>
           </Routes>

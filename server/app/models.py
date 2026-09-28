@@ -93,7 +93,13 @@ class PlanEntry(SQLModel, table=True):
     position: int = 0  # order within the day (or the queue)
     recipe_id: int | None = Field(default=None, foreign_key="recipe.id", ondelete="CASCADE")
     title: str = ""  # for a custom meal or note with no recipe
-    servings: float = 1  # portions planned (eaten, or cooked for a batch)
+    servings: float = 1  # portions eaten at this meal
+    # Batch cooking: this meal cooks cook_portions (the grocery list buys for all of them);
+    # what isn't eaten here goes in the fridge.
+    cook_portions: float | None = None
+    # A leftover meal: eats servings portions of the batch cooked by that entry.
+    leftover_of: int | None = Field(default=None, foreign_key="planentry.id", ondelete="CASCADE", index=True)
+    discarded: float = 0  # batch portions thrown away
     created_at: datetime = Field(default_factory=now)
 
 

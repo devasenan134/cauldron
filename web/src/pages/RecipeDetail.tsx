@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, type Ingredient, type RecipeDetail as Recipe } from '../api'
 import { today } from '../dates'
+import { refreshPlan } from '../plan'
 import { Button, inputCls, kcal, Pill, thumb } from '../components/ui'
 import { useDebounced } from '../useDebounced'
 
@@ -227,20 +228,38 @@ function FoodPicker({ initial, onPick }: { initial: string; onPick: (id: number)
 function AddToPlan({ recipeId, defaultServings }: { recipeId: number; defaultServings: number }) {
   const qc = useQueryClient()
   const [day, setDay] = useState(today())
-  const [servings, setServings] = useState(String(defaultServings))
+  const [eat, setEat] = useState('1')
+  const [cook, setCook] = useState(String(defaultServings))
+  const eatN = Number(eat) || 1
+  const cookN = Math.max(Number(cook) || eatN, eatN)
   const add = useMutation({
-    mutationFn: () => api.addEntry({ day: day || null, recipe_id: recipeId, servings: Number(servings) || 1 }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plan'] }),
+    // Cooking more than you eat makes a batch; the rest goes in the fridge.
+    mutationFn: () =>
+      api.addEntry({ day: day || null, recipe_id: recipeId, servings: eatN, cook_portions: cookN > eatN ? cookN : null }),
+    onSuccess: () => refreshPlan(qc),
   })
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <input type="date" className={inputCls} value={day} onChange={(e) => setDay(e.target.value)} />
-      <label className="flex items-center gap-1">
-        <input className={`${inputCls} w-16`} inputMode="decimal" value={servings} onChange={(e) => setServings(e.target.value)} />
-        servings
-      </label>
-      <Button onClick={() => add.mutate()} disabled={add.isPending}>{day ? 'Add to plan' : 'Add to queue'}</Button>
-      {add.isSuccess && <Link to="/planner" className="text-ember hover:underline">Added. Open planner →</Link>}
+    <div className="space-y-1.5 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="date" className={inputCls} value={day} onChange={(e) => setDay(e.target.value)} />
+        <label className="flex items-center gap-1">
+          cook
+          <input className={`${inputCls} w-14`} inputMode="decimal" value={cook} onChange={(e) => setCook(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-1">
+          eat
+          <input className={`${inputCls} w-14`} inputMode="decimal" value={eat} onChange={(e) => setEat(e.target.value)} />
+        </label>
+        <Button onClick={() => add.mutate()} disabled={add.isPending}>{day ? 'Add to plan' : 'Add to queue'}</Button>
+      </div>
+      <p className="text-xs text-stone-500">
+        {cookN > eatN
+          ? `Batch: ${cookN - eatN} ${cookN - eatN === 1 ? 'portion goes' : 'portions go'} in the fridge for later.`
+          : 'Portions, one serving each. Cook more than you eat to batch cook.'}
+        {add.isSuccess && (
+          <Link to="/planner" className="ml-2 text-ember hover:underline">Added. Open planner →</Link>
+        )}
+      </p>
     </div>
   )
 }

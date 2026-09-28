@@ -4,6 +4,7 @@ import { useMe, useSignOut } from '../auth'
 const links = [
   { to: '/recipes', label: 'Recipes' },
   { to: '/planner', label: 'Planner' },
+  { to: '/fridge', label: 'Fridge' },
   { to: '/grocery', label: 'Grocery' },
 ]
 

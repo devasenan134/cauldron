@@ -31,3 +31,8 @@ export function dayLabel(s: string): { weekday: string; date: string } {
     date: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
   }
 }
+
+/** Whole days from s to today (negative for future days). */
+export function daysAgo(s: string): number {
+  return Math.round((parse(today()).getTime() - parse(s).getTime()) / 86_400_000)
+}

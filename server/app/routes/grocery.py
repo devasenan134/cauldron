@@ -104,7 +104,8 @@ def generate(body: GenerateIn, session: Session = Depends(get_session), user: Us
     tallies: dict[str, Tally] = {}
     for e in entries:
         recipe = recipes[e.recipe_id]
-        factor = e.servings / recipe.servings if recipe.servings else 1
+        portions = e.cook_portions if e.cook_portions is not None else e.servings
+        factor = portions / recipe.servings if recipe.servings else 1
         for ing in by_recipe.get(recipe.id, []):
             key = ing.name.strip().lower()
             if key in SKIP:
