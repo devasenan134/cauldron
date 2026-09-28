@@ -81,7 +81,7 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit) {
         runCatching { cooked = app.api.cooked() }
         runCatching { catalog = app.api.catalog() }
     }
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(LocalRefresh.current) { load() }
 
     Column(Modifier.fillMaxSize()) {
     // The same header as every other tab (it keeps clear of the status bar).

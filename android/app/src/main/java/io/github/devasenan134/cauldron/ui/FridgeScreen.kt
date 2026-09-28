@@ -63,7 +63,7 @@ fun FridgeScreen(openRecipe: (Int) -> Unit) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val batches by store.batches.collectAsState()
-    val (load, retry) = cached(batches, Unit) { store.loadBatches() }
+    val (load, retry) = cached(batches, LocalRefresh.current) { store.loadBatches() }
     var refreshing by remember { mutableStateOf(false) }
     var tossing by remember { mutableStateOf<PlanEntry?>(null) }
 

@@ -1,67 +1,64 @@
 package io.github.devasenan134.cauldron
 
 import android.os.Bundle
-import io.github.devasenan134.cauldron.ui.FolderScreen
-import io.github.devasenan134.cauldron.ui.ProfileScreen
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.navigation.NavGraphBuilder
-import androidx.navigation.NavBackStackEntry
-import androidx.navigation.NamedNavArgument
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.AnimatedContentScope
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Kitchen
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.compose.ui.zIndex
+import androidx.core.view.WindowCompat
 import io.github.devasenan134.cauldron.data.Session
-import io.github.devasenan134.cauldron.ui.CauldronTheme
-import io.github.devasenan134.cauldron.ui.C
 import io.github.devasenan134.cauldron.ui.BottomTabBar
+import io.github.devasenan134.cauldron.ui.C
+import io.github.devasenan134.cauldron.ui.CauldronTheme
+import io.github.devasenan134.cauldron.ui.FolderScreen
 import io.github.devasenan134.cauldron.ui.FridgeScreen
 import io.github.devasenan134.cauldron.ui.GroceryScreen
 import io.github.devasenan134.cauldron.ui.HomeScreen
 import io.github.devasenan134.cauldron.ui.LocalBottomSpace
 import io.github.devasenan134.cauldron.ui.LocalOpenSettings
+import io.github.devasenan134.cauldron.ui.LocalRefresh
 import io.github.devasenan134.cauldron.ui.PlannerScreen
+import io.github.devasenan134.cauldron.ui.ProfileScreen
 import io.github.devasenan134.cauldron.ui.RecipeEditorScreen
 import io.github.devasenan134.cauldron.ui.RecipeScreen
 import io.github.devasenan134.cauldron.ui.RecipesScreen
@@ -69,6 +66,9 @@ import io.github.devasenan134.cauldron.ui.SettingsScreen
 import io.github.devasenan134.cauldron.ui.SignInScreen
 import io.github.devasenan134.cauldron.ui.TabItem
 import io.github.devasenan134.cauldron.ui.app
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.launch
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,125 +100,221 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private object Routes {
-    const val HOME = "home"
-    const val RECIPES = "recipes"
-    const val PLAN = "plan"
-    const val FRIDGE = "fridge"
-    const val PROFILE = "profile"
-    const val GROCERY = "grocery"
-    const val SETTINGS = "settings"
-    const val NEW_RECIPE = "recipe/new"
-    fun recipe(id: Int) = "recipe/$id"
-    fun editRecipe(id: Int) = "recipe/$id/edit"
-    fun folder(id: Int) = "folder/$id"
-    val TABS = setOf(HOME, RECIPES, PLAN, FRIDGE, PROFILE)
-}
-
-private const val SLIDE_MS = 320
-
-private fun NavHostController.tab(route: String) = navigate(route) {
-    popUpTo(graph.findStartDestination().id) { saveState = true }
-    launchSingleTop = true
-    restoreState = true
-}
-
 /**
- * How pages move. Every page is drawn on a solid background, so two pages never show through each
- * other mid-animation (the back swipe used to smear Plan over Home).
+ * The app's pages, iOS/Cook Well style.
  *
- * - Opening a page (recipe, grocery, settings…): it slides in from the right over the page below,
- *   which drifts left a little. Back reverses it; the predictive back gesture scrubs this with your
- *   finger, so the page follows the swipe and the one below is already there.
- * - Switching tabs: a quick crossfade. Back from a tab to Home: the tab shrinks and fades away
- *   (the system's own back look) over Home, which stays put.
+ * The five tabs stay alive once visited (hidden ones aren't drawn). Pages you open (a recipe, the
+ * grocery list, settings, a folder, the editor) slide in on top of the page you came from, which also
+ * stays alive underneath. So going back never has to build a page: the back swipe just slides the
+ * top page away with your finger, and it looks the same whether you swipe slowly or flick. (Rebuilding
+ * the page underneath at the start of a quick swipe is what made the old back animation stutter.)
  */
-private fun isPage(route: String?) = route != null && route !in Routes.TABS
+private sealed interface Page {
+    data class Recipe(val id: Int) : Page
+    data class Edit(val id: Int?) : Page // null = a new recipe
+    data class Folder(val id: Int) : Page
+    data object Grocery : Page
+    data object Settings : Page
 
-@Composable
-private fun AppRoot() {
-    val nav = rememberNavController()
-    val route = nav.currentBackStackEntryAsState().value?.destination?.route
-    val app = app()
-    val update by app.updates.available.collectAsState()
-    val tabs = listOf(
-        TabItem(Routes.HOME, "Home", Icons.Outlined.Explore),
-        TabItem(Routes.RECIPES, "Recipes", Icons.AutoMirrored.Outlined.MenuBook),
-        TabItem(Routes.PLAN, "Plan", Icons.Outlined.CalendarMonth),
-        TabItem(Routes.FRIDGE, "Fridge", Icons.Outlined.Kitchen),
-        TabItem(Routes.PROFILE, "Profile", Icons.Outlined.AccountCircle, dot = update != null),
-    )
-    val showBar = route in Routes.TABS
-    val openRecipe: (Int) -> Unit = { nav.navigate(Routes.recipe(it)) }
-    val openGrocery: () -> Unit = { nav.navigate(Routes.GROCERY) { launchSingleTop = true } }
+    fun save(): String = when (this) {
+        is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"
+    }
 
-    CompositionLocalProvider(
-        LocalOpenSettings provides { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-        LocalBottomSpace provides if (showBar) 72.dp else 0.dp,
-    ) {
-        Box(Modifier.fillMaxSize().background(C.bg)) {
-            NavHost(
-                nav, startDestination = Routes.HOME, modifier = Modifier.fillMaxSize(),
-                enterTransition = {
-                    if (isPage(targetState.destination.route)) slideInHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { it }
-                    else fadeIn(tween(180))
-                },
-                exitTransition = {
-                    if (isPage(targetState.destination.route)) slideOutHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { -it / 5 }
-                    else fadeOut(tween(120))
-                },
-                popEnterTransition = {
-                    if (isPage(initialState.destination.route)) slideInHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { -it / 5 }
-                    else EnterTransition.None
-                },
-                popExitTransition = {
-                    if (isPage(initialState.destination.route)) slideOutHorizontally(tween(SLIDE_MS, easing = FastOutSlowInEasing)) { it }
-                    else scaleOut(tween(SLIDE_MS), targetScale = 0.9f) + fadeOut(tween(SLIDE_MS))
-                },
-            ) {
-                page(Routes.HOME) { HomeScreen(openRecipe = openRecipe, openTab = { nav.tab(it) }, openGrocery = openGrocery) }
-                page(Routes.RECIPES) { RecipesScreen(openRecipe = openRecipe, newRecipe = { nav.navigate(Routes.NEW_RECIPE) }) }
-                page(Routes.NEW_RECIPE) {
-                    RecipeEditorScreen(null, back = { nav.popBackStack() },
-                        saved = { id -> nav.navigate(Routes.recipe(id)) { popUpTo(Routes.NEW_RECIPE) { inclusive = true } } }, deleted = {})
-                }
-                page("recipe/{id}", listOf(navArgument("id") { type = NavType.IntType })) {
-                    val id = it.arguments!!.getInt("id")
-                    RecipeScreen(id = id, back = { nav.popBackStack() }, openPlan = { nav.tab(Routes.PLAN) },
-                        edit = { nav.navigate(Routes.editRecipe(id)) }, openRecipe = openRecipe,
-                        editNew = { newId -> nav.navigate(Routes.editRecipe(newId)) })
-                }
-                page("recipe/{id}/edit", listOf(navArgument("id") { type = NavType.IntType })) {
-                    RecipeEditorScreen(it.arguments!!.getInt("id"), back = { nav.popBackStack() }, saved = { nav.popBackStack() },
-                        deleted = { nav.popBackStack(Routes.RECIPES, inclusive = false).let { ok -> if (!ok) nav.tab(Routes.RECIPES) } })
-                }
-                page(Routes.PLAN) { PlannerScreen(openRecipe = openRecipe, openGrocery = openGrocery) }
-                page(Routes.FRIDGE) { FridgeScreen(openRecipe = openRecipe) }
-                page(Routes.PROFILE) { ProfileScreen(openRecipe = openRecipe, openFolder = { nav.navigate(Routes.folder(it)) }) }
-                page("folder/{id}", listOf(navArgument("id") { type = NavType.IntType })) {
-                    FolderScreen(it.arguments!!.getInt("id"), back = { nav.popBackStack() }, openRecipe = openRecipe)
-                }
-                page(Routes.GROCERY) { GroceryScreen(openPlan = { nav.tab(Routes.PLAN) }, back = { nav.popBackStack() }) }
-                page(Routes.SETTINGS) { SettingsScreen(back = { nav.popBackStack() }) }
-            }
-            // Content scrolls under the transparent status bar; keep the clock and icons readable.
-            // (A recipe's page has its photo up there and its own bar that turns solid.)
-            val photoPage = route == "recipe/{id}"
-            if (!photoPage) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(C.bg.copy(alpha = 0.94f)))
-            AnimatedVisibility(
-                showBar, modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut(),
-            ) {
-                BottomTabBar(tabs, route, onSelect = { nav.tab(it.route) })
+    companion object {
+        fun load(s: String): Page? = s.split(":").let { p ->
+            when (p[0]) {
+                "recipe" -> Recipe(p[1].toInt()); "edit" -> Edit(p[1].toIntOrNull()); "folder" -> Folder(p[1].toInt())
+                "grocery" -> Grocery; "settings" -> Settings; else -> null
             }
         }
     }
 }
 
-/** A destination drawn on the page colour, so pages never show through each other while animating. */
-private fun NavGraphBuilder.page(
-    route: String, arguments: List<NamedNavArgument> = emptyList(),
-    content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
-) = composable(route, arguments) { entry ->
-    Box(Modifier.fillMaxSize().background(C.bg)) { content(entry) }
+/** An open page and how far it has slid away (0 = fully shown, 1 = off to the right). */
+private class Layer(val page: Page, val key: Long, shown: Boolean) {
+    val offset = Animatable(if (shown) 0f else 1f)
+}
+
+private object Tabs {
+    const val HOME = "home"; const val RECIPES = "recipes"; const val PLAN = "plan"; const val FRIDGE = "fridge"; const val PROFILE = "profile"
+}
+
+private val SLIDE = tween<Float>(320, easing = FastOutSlowInEasing)
+
+@Composable
+private fun AppRoot() {
+    val app = app()
+    val scope = rememberCoroutineScope()
+    val update by app.updates.available.collectAsState()
+    val tabs = listOf(
+        TabItem(Tabs.HOME, "Home", Icons.Outlined.Explore),
+        TabItem(Tabs.RECIPES, "Recipes", Icons.AutoMirrored.Outlined.MenuBook),
+        TabItem(Tabs.PLAN, "Plan", Icons.Outlined.CalendarMonth),
+        TabItem(Tabs.FRIDGE, "Fridge", Icons.Outlined.Kitchen),
+        TabItem(Tabs.PROFILE, "Profile", Icons.Outlined.AccountCircle, dot = update != null),
+    )
+
+    var tab by rememberSaveable { mutableStateOf(Tabs.HOME) }
+    var visited by rememberSaveable { mutableStateOf(listOf(Tabs.HOME)) }
+    var saved by rememberSaveable { mutableStateOf(listOf<String>()) } // the open pages, to survive a restart
+    val layers = remember { mutableStateListOf<Layer>().apply { addAll(saved.mapNotNull(Page::load).mapIndexed { i, p -> Layer(p, i.toLong(), shown = true) }) } }
+    var nextKey by remember { mutableLongStateOf(layers.size.toLong()) }
+    fun remember() { saved = layers.map { it.page.save() } }
+    val holder = rememberSaveableStateHolder()
+    var refresh by remember { mutableIntStateOf(0) }
+
+    fun open(page: Page) {
+        val layer = Layer(page, nextKey++, shown = false)
+        layers += layer
+        remember()
+        scope.launch { layer.offset.animateTo(0f, SLIDE) }
+    }
+    fun close(layer: Layer? = layers.lastOrNull()) {
+        layer ?: return
+        scope.launch {
+            layer.offset.animateTo(1f, SLIDE)
+            layers.remove(layer)
+            holder.removeState(layer.key)
+            remember()
+            refresh++
+        }
+    }
+    fun closeAll() { layers.forEach { holder.removeState(it.key) }; layers.clear(); remember() }
+    fun goTab(t: String) {
+        closeAll()
+        tab = t
+        refresh++
+        if (t !in visited) visited = visited + t
+    }
+    val openRecipe: (Int) -> Unit = { open(Page.Recipe(it)) }
+
+    // Back from a tab other than Home: it shrinks away over Home (like Android's own back), then Home.
+    val tabBack = remember { Animatable(0f) }
+    PredictiveBackHandler(enabled = layers.isEmpty() && tab != Tabs.HOME) { progress ->
+        if (Tabs.HOME !in visited) visited = visited + Tabs.HOME
+        try {
+            progress.collect { tabBack.snapTo(it.progress) }
+            tabBack.animateTo(1f, tween(150))
+            tab = Tabs.HOME
+            tabBack.snapTo(0f)
+        } catch (e: CancellationException) {
+            tabBack.animateTo(0f, tween(200))
+            throw e
+        }
+    }
+    // Back from an open page: it follows your finger off to the right; let go early and it springs back.
+    PredictiveBackHandler(enabled = layers.isNotEmpty()) { progress ->
+        val top = layers.last()
+        try {
+            progress.collect { top.offset.snapTo(it.progress) }
+            top.offset.animateTo(1f, tween((320 * (1 - top.offset.value)).toInt().coerceAtLeast(120), easing = FastOutSlowInEasing))
+            layers.remove(top)
+            holder.removeState(top.key)
+            remember()
+            refresh++
+        } catch (e: CancellationException) {
+            top.offset.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+            throw e
+        }
+    }
+
+    val topOffset = layers.lastOrNull()?.offset?.value ?: 1f // 1 = no page over the tabs
+    CompositionLocalProvider(
+        LocalOpenSettings provides { open(Page.Settings) },
+        LocalBottomSpace provides 72.dp,
+        LocalRefresh provides refresh,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(C.bg)) {
+            val width = constraints.maxWidth.toFloat()
+
+            // The tabs. Hidden ones aren't drawn; Home shows under a tab being swiped back.
+            val tabsVisible = layers.size < 2 || layers[layers.size - 2].offset.value > 0f
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                // Drift left a little while a page covers them (a touch of depth, like iOS).
+                translationX = if (layers.isEmpty()) 0f else -(1f - topOffset) * width * 0.2f
+                alpha = if (tabsVisible) 1f else 0f
+            }) {
+                visited.forEach { t ->
+                    val current = t == tab
+                    val underneath = t == Tabs.HOME && tab != Tabs.HOME && tabBack.value > 0f
+                    val dim = if (underneath) 0.35f * (1f - tabBack.value) else 0f
+                    Box(
+                        Modifier.fillMaxSize().zIndex(if (current) 1f else 0f).graphicsLayer {
+                            alpha = if (current || underneath) 1f else 0f
+                            if (current && tabBack.value > 0f) {
+                                val p = tabBack.value
+                                // Stays solid (never see-through): it shrinks to a card and slides a little.
+                                scaleX = 1f - 0.12f * p; scaleY = scaleX
+                                translationX = p * size.width * 0.08f
+                                shape = RoundedCornerShape(28.dp); clip = true
+                                shadowElevation = 32f
+                            }
+                        }.background(C.bg),
+                    ) {
+                        if (dim > 0f) Box(Modifier.fillMaxSize().zIndex(3f).background(Color.Black.copy(alpha = dim)))
+                        holder.SaveableStateProvider("tab:$t") {
+                            when (t) {
+                                Tabs.HOME -> HomeScreen(openRecipe = openRecipe, openTab = { goTab(it) }, openGrocery = { open(Page.Grocery) })
+                                Tabs.RECIPES -> RecipesScreen(openRecipe = openRecipe, newRecipe = { open(Page.Edit(null)) })
+                                Tabs.PLAN -> PlannerScreen(openRecipe = openRecipe, openGrocery = { open(Page.Grocery) })
+                                Tabs.FRIDGE -> FridgeScreen(openRecipe = openRecipe)
+                                Tabs.PROFILE -> ProfileScreen(openRecipe = openRecipe, openFolder = { open(Page.Folder(it)) })
+                            }
+                        }
+                    }
+                }
+                // Keep the clock readable over scrolling content.
+                Box(Modifier.align(Alignment.TopCenter).zIndex(2f).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(C.bg.copy(alpha = 0.94f)))
+                BottomTabBar(tabs, tab, onSelect = { goTab(it.route) }, modifier = Modifier.align(Alignment.BottomCenter).zIndex(2f))
+            }
+
+            // Open pages, each on top of the last.
+            layers.forEachIndexed { i, layer ->
+                key(layer.key) {
+                    val isTop = i == layers.lastIndex
+                    val above = layers.getOrNull(i + 1)
+                    val drawn = isTop || i == layers.size - 2 // only the top two are ever visible
+                    Box(
+                        Modifier.fillMaxSize().graphicsLayer {
+                            translationX = layer.offset.value * width - (above?.let { (1f - it.offset.value) * width * 0.2f } ?: 0f)
+                            alpha = if (drawn) 1f else 0f
+                            shadowElevation = if (isTop && layer.offset.value > 0f) 24f else 0f
+                        }.background(C.bg),
+                    ) {
+                        holder.SaveableStateProvider(layer.key) {
+                            CompositionLocalProvider(LocalBottomSpace provides 0.dp) {
+                                PageContent(layer.page, back = { close(layer) }, open = ::open, openRecipe = openRecipe,
+                                    replace = { page ->
+                                        // e.g. a new recipe was saved: show it instead of the editor
+                                        val idx = layers.indexOf(layer)
+                                        if (idx >= 0) { layers[idx] = Layer(page, nextKey++, shown = true); holder.removeState(layer.key); remember() }
+                                    },
+                                    toTab = { goTab(it) })
+                            }
+                        }
+                    }
+                }
+            }
+            // The status-bar strip for open pages (a recipe's photo page draws its own).
+            val top = layers.lastOrNull()
+            if (top != null && top.page !is Page.Recipe) {
+                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().graphicsLayer { translationX = top.offset.value * width }
+                    .windowInsetsTopHeight(WindowInsets.statusBars).background(C.bg.copy(alpha = 0.94f)))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PageContent(page: Page, back: () -> Unit, open: (Page) -> Unit, openRecipe: (Int) -> Unit, replace: (Page) -> Unit, toTab: (String) -> Unit) {
+    when (page) {
+        is Page.Recipe -> RecipeScreen(id = page.id, back = back, openPlan = { toTab(Tabs.PLAN) },
+            edit = { open(Page.Edit(page.id)) }, openRecipe = openRecipe, editNew = { open(Page.Edit(it)) })
+        is Page.Edit -> RecipeEditorScreen(page.id, back = back,
+            saved = { id -> if (page.id == null) replace(Page.Recipe(id)) else back() },
+            deleted = { toTab(Tabs.RECIPES) })
+        is Page.Folder -> FolderScreen(page.id, back = back, openRecipe = openRecipe)
+        Page.Grocery -> GroceryScreen(openPlan = { toTab(Tabs.PLAN) }, back = back)
+        Page.Settings -> SettingsScreen(back = back)
+    }
 }

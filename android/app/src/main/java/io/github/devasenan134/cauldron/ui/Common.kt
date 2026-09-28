@@ -61,7 +61,9 @@ fun Throwable.friendly(): String = when (this) {
 fun <T> cached(value: T?, vararg keys: Any?, refresh: suspend () -> Unit): Pair<Load<T>, () -> Unit> {
     var error by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
-    LaunchedEffect(*keys, attempt) {
+    // Also when the cache is cleared (say, after a recipe is saved): tabs stay alive now, so nothing
+    // else would ask for the data again.
+    LaunchedEffect(*keys, attempt, value == null) {
         error = null
         try { refresh() } catch (e: Exception) { error = e.friendly() }
     }

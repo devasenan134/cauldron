@@ -16,8 +16,8 @@ android {
         applicationId = "io.github.devasenan134.cauldron"
         minSdk = 28
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.6.1"
+        versionCode = 11
+        versionName = "0.6.2"
 
         // -PapiUrl=http://10.0.2.2:8766 points a build at a local test server.
         buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://cauldron.craftingtable.cc"}\"")
@@ -56,6 +56,15 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
+    }
+
+    // Local only: release speed (R8, no debugging) but pointed at a test server and signed in with
+    // -PdevToken, to measure animations the way a phone runs them. Never published.
+    buildTypes.create("profiling") {
+        initWith(buildTypes.getByName("release"))
+        matchingFallbacks += "release"
+        buildConfigField("String", "DEV_TOKEN", "\"${project.findProperty("devToken") ?: ""}\"")
+        manifestPlaceholders["cleartext"] = "true"
     }
 
     buildFeatures {

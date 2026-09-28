@@ -58,6 +58,9 @@ import io.github.devasenan134.cauldron.data.Session
 /** Opens the Settings screen; provided by the navigation host. */
 val LocalOpenSettings = staticCompositionLocalOf<() -> Unit> { {} }
 
+/** Goes up each time you switch tabs or close a page: tabs stay alive, so they refresh on it. */
+val LocalRefresh = compositionLocalOf { 0 }
+
 /** Room to leave at the bottom of scrolling content, so the floating tab bar doesn't cover it. */
 val LocalBottomSpace = compositionLocalOf { 0.dp }
 

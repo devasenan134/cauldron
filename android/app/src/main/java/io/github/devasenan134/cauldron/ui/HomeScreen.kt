@@ -68,7 +68,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
     var editingGoal by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(LocalRefresh.current) {
         runCatching { store.loadPlan(week) }
         runCatching { store.loadBatches() }
     }
