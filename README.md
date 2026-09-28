@@ -56,6 +56,17 @@ Testing against a local server on the emulator, without Google:
 ./gradlew assembleDebug -PapiUrl=http://10.0.2.2:8765 -PdevToken=<a session token>
 ```
 
+To release a new version, bump `versionCode` and `versionName` in
+`android/app/build.gradle.kts`, then:
+
+```sh
+scripts/release-android.sh "- What's new"
+```
+
+It uploads the APK and notes to `data/apk/` on the server (the app checks
+`/api/app/latest` and updates itself from there, since the GitHub repository is
+private) and creates the GitHub release.
+
 The grocery list works offline: changes apply at once and sync in order when the
 server is reachable again.
 
