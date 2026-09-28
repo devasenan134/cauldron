@@ -54,4 +54,11 @@ hand edits are never overwritten.
 4. Batch cooking: portions left, calories per portion
 5. Import from YouTube / Reels / Shorts (yt-dlp + transcript + LLM)
 6. Android app (+ share-sheet import)
-7. Google sign-in and friends
+7. ✅ Google sign-in and friends
+
+## License
+
+Proprietary. Copyright (c) 2026 Devasenan Murugan. All rights reserved. See [LICENSE](LICENSE).
+
+The Cook Well recipe library (text and photos © Ethan Chlebowski / Cook Well) is
+imported for personal use only and must not ship in a commercial release.
