@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type Ingredient, type RecipeDetail as Recipe } from '../api'
 import { today } from '../dates'
 import { refreshPlan } from '../plan'
-import { Button, DayChips, Pill, Shimmer, Stepper } from '../components/ui'
+import { Button, DayChips, Pill, Shimmer, Stepper, inputCls } from '../components/ui'
 import { dayChipLabel, kcal, num, plural, thumb } from '../format'
 import { useDebounced } from '../useDebounced'
 
@@ -60,6 +60,7 @@ export default function RecipeDetail() {
         <div>
           <h1 className="font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">{r.title}</h1>
           <div className="mt-4 flex flex-wrap gap-2">
+            {r.is_prep && <Pill tone="bright">🫙 Prepped ingredient</Pill>}
             {r.total_minutes ? <Pill tone="paper">⏱ {r.total_minutes} min</Pill> : null}
             {(r.yield_text || r.servings) && <Pill tone="paper">🍴 {r.yield_text ?? plural(r.servings!, 'serving')}</Pill>}
             {r.cuisine && <Pill tone="paper">{r.cuisine}</Pill>}
@@ -81,7 +82,8 @@ export default function RecipeDetail() {
             <MakeVersion id={r.id} />
           </div>
           <NutritionCard r={r} />
-          <AddToPlan r={r} />
+          <PrepCard r={r} />
+          {r.is_prep ? <MakePrep r={r} /> : <AddToPlan r={r} />}
         </div>
       </section>
 
@@ -91,7 +93,7 @@ export default function RecipeDetail() {
             <h2 className="flex-1 font-display text-3xl font-bold">Ingredients</h2>
             <span className="font-semibold text-stone-500">{r.ingredients.length}</span>
           </div>
-          {r.can_edit && <p className="mb-3 text-sm text-stone-500">Click a weight to correct it, or a food to change what it's counted as.</p>}
+          {r.can_edit && <p className="mb-3 text-sm text-stone-500">Click a weight to correct it, or ⇄ to change what it's counted as (a food, or one of your prepped ingredients). Click a food to see or edit its macros.</p>}
           {[...groups].map(([group, ings]) => (
             <div key={group} className="mb-4">
               {group && <h3 className="mb-2 ml-1 text-xs font-bold uppercase tracking-widest text-stone-500">{group}</h3>}
@@ -122,13 +124,16 @@ export default function RecipeDetail() {
 
 function NutritionCard({ r }: { r: Recipe }) {
   const n = r.nutrition
-  const m = n.per_serving ?? n.total
+  // A prep is used by weight, so it's shown per 100 g.
+  const m = (r.is_prep && n.per_100g) || n.per_serving || n.total
   // Where the calories come from: protein and carbs 4 kcal/g, fat 9.
   const parts = { protein: m.protein * 4, carbs: m.carbs * 4, fat: m.fat * 9 }
   const total = parts.protein + parts.carbs + parts.fat || 1
   return (
     <div className="mt-6 rounded-3xl bg-paper p-6 ring-1 ring-stone-200">
-      <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">{n.per_serving ? `Per serving · recipe makes ${num(r.servings ?? 1)}` : 'Whole recipe'}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+        {r.is_prep && n.per_100g ? `Per 100 g · makes about ${Math.round(n.yield_grams ?? 0)} g` : n.per_serving ? `Per serving · recipe makes ${num(r.servings ?? 1)}` : 'Whole recipe'}
+      </p>
       <p className="mt-1 flex items-baseline gap-2">
         <span className="font-display text-5xl font-extrabold">{Math.round(m.kcal).toLocaleString()}</span>
         <span className="text-stone-500">kcal</span>
@@ -153,7 +158,7 @@ function NutritionCard({ r }: { r: Recipe }) {
         ))}
       </div>
       </>}
-      {n.per_serving && <p className="mt-4 text-xs text-stone-500">Whole recipe: {kcal(n.total.kcal)}</p>}
+      {(n.per_serving || (r.is_prep && n.per_100g)) && <p className="mt-4 text-xs text-stone-500">Whole recipe: {kcal(n.total.kcal)}{r.is_prep && n.per_serving ? ` · ${kcal(n.per_serving.kcal)} per serving` : ''}</p>}
       {n.left_out.length > 0 && <p className="mt-1 text-xs text-pink-deep">Not counted (no amount): {n.left_out.join(', ')}</p>}
       {n.estimated.length > 0 && <p className="mt-1 text-xs text-stone-400">Estimated: {n.estimated.join(', ')}</p>}
       {r.source_nutrition?.from === 'creator' && (
@@ -165,6 +170,114 @@ function NutritionCard({ r }: { r: Recipe }) {
           {r.source_nutrition.per === 'recipe' ? 'for the whole recipe' : 'per serving'}
         </p>
       )}
+    </div>
+  )
+}
+
+/** Prepped ingredient: whether this recipe is one, what it weighs when done, and what uses it. */
+function PrepCard({ r }: { r: Recipe }) {
+  const qc = useQueryClient()
+  const [grams, setGrams] = useState(r.yield_grams?.toString() ?? '')
+  const set = useMutation({
+    mutationFn: (patch: { is_prep?: boolean; yield_grams?: number | null }) => api.setPrep(r.id, patch),
+    onSuccess: (data) => {
+      qc.setQueryData(['recipe', r.id], data)
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['preps'] })
+      qc.invalidateQueries({ queryKey: ['plan'] })
+      qc.invalidateQueries({ queryKey: ['prep-stock'] })
+    },
+  })
+  if (!r.can_edit && !r.is_prep) return null
+  if (!r.is_prep) return (
+    <button onClick={() => set.mutate({ is_prep: true })} disabled={set.isPending}
+      className="press mt-4 flex w-full items-center gap-3 rounded-2xl bg-paper px-4 py-3 text-left ring-1 ring-stone-200 hover:bg-sand">
+      <span className="text-xl">🫙</span>
+      <span className="flex-1 text-sm"><span className="font-semibold">Use as a prepped ingredient</span>
+        <span className="block text-stone-500">Cooked rice, pickles, a sauce: other recipes use it by weight, and you track it in the fridge.</span></span>
+      <span className="relative h-7 w-12 shrink-0 rounded-full bg-stone-300"><span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow" /></span>
+    </button>
+  )
+  const saveGrams = () => {
+    const v = grams.trim() === '' ? null : Number(grams)
+    if (v !== r.yield_grams && (v === null || v > 0)) set.mutate({ yield_grams: v })
+  }
+  const weighed = r.nutrition.grams
+  return (
+    <div className={`mt-6 rounded-3xl p-6 ${r.is_prep ? 'bg-ember-soft' : 'bg-paper'}`}>
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <h3 className="font-display text-2xl font-bold">🫙 Prepped ingredient</h3>
+          <p className="mt-1 text-sm text-stone-600">
+            Other recipes can use this by weight (write e.g. “150 g {r.title.toLowerCase()}”). What you make goes in the fridge, and meals that use it take from there.
+          </p>
+        </div>
+        {r.can_edit && (
+          <button role="switch" aria-checked={r.is_prep} aria-label="Prepped ingredient" onClick={() => set.mutate({ is_prep: !r.is_prep })}
+            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition-colors ${r.is_prep ? 'bg-ember-bright' : 'bg-stone-300'}`}>
+            <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-[left] ${r.is_prep ? 'left-6' : 'left-1'}`} />
+          </button>
+        )}
+      </div>
+      {(
+        <>
+          <label className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold">Weighs when done</span>
+            {r.can_edit ? (
+              <input value={grams} inputMode="decimal" onChange={(e) => setGrams(e.target.value.replace(/[^\d.]/g, ''))} onBlur={saveGrams}
+                onKeyDown={(e) => e.key === 'Enter' && saveGrams()} placeholder={String(Math.round(weighed))}
+                className="w-24 rounded-xl bg-paper px-3 py-1.5 text-right font-semibold outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
+            ) : <span className="font-semibold">{Math.round(r.nutrition.yield_grams ?? 0)}</span>}
+            <span>g</span>
+            <span className="basis-full text-xs text-stone-500">
+              {r.yield_grams ? `Its ingredients weigh ${Math.round(weighed)} g raw.` : `Left blank, it's what the ingredients weigh (${Math.round(weighed)} g). Rice and pasta gain water, sauces lose it: weigh it once for better numbers.`}
+            </span>
+          </label>
+          {r.used_in.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">Used in</p>
+              <div className="flex flex-wrap gap-2">
+                {r.used_in.map((u) => <Link key={u.id} to={`/recipes/${u.id}`} className="rounded-full bg-paper px-3 py-1.5 text-sm font-semibold hover:bg-sand">{u.title}</Link>)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {set.isError && <p className="mt-2 text-sm text-danger">{String(set.error)}</p>}
+    </div>
+  )
+}
+
+/** Plan a prep session: make some (by weight); it goes in the fridge for the meals that use it. */
+function MakePrep({ r }: { r: Recipe }) {
+  const qc = useQueryClient()
+  const full = Math.round(r.nutrition.yield_grams ?? 0)
+  const [day, setDay] = useState<string | null>(today())
+  const [grams, setGrams] = useState(full ? String(full) : '')
+  const add = useMutation({
+    mutationFn: () => api.addEntry({ day, recipe_id: r.id, made_grams: Number(grams) || null }),
+    onSuccess: () => refreshPlan(qc),
+  })
+  return (
+    <div className="mt-6 rounded-3xl bg-paper p-6">
+      <h3 className="font-display text-2xl font-bold">Make it</h3>
+      <p className="mt-1 text-sm text-stone-500">It goes in the fridge; meals that use it take what they need, oldest first. The grocery list buys for it.</p>
+      <p className="mb-3 mt-4 text-sm font-semibold">When</p>
+      <DayChips selected={day} onPick={setDay} days={8} />
+      <label className="mt-5 flex items-center gap-2">
+        <span className="text-sm font-semibold">How much</span>
+        <input value={grams} inputMode="decimal" onChange={(e) => setGrams(e.target.value.replace(/[^\d.]/g, ''))} className={`${inputCls} w-32 py-2 text-right`} />
+        <span className="text-sm">g</span>
+        {full > 0 && Number(grams) !== full && <button className="text-sm font-semibold text-ember hover:underline" onClick={() => setGrams(String(full))}>whole recipe ({full} g)</button>}
+        {full > 0 && Number(grams) > 0 && Number(grams) !== full && <span className="text-sm text-stone-500">× {num(Number(grams) / full)}</span>}
+      </label>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="accent" onClick={() => add.mutate()} disabled={add.isPending} className="px-8 py-3 text-base">
+          {day === null ? 'Add to queue' : `Make ${dayChipLabel(day).toLowerCase() === 'today' ? 'today' : `on ${dayChipLabel(day)}`}`}
+        </Button>
+        {add.isSuccess && <Link to="/fridge" className="rise font-semibold text-ember hover:underline">Added ✓ See the fridge →</Link>}
+        {add.isError && <span className="text-sm text-red-700">{String(add.error)}</span>}
+      </div>
     </div>
   )
 }
@@ -212,12 +325,13 @@ function AddToPlan({ r }: { r: Recipe }) {
 function usePatchIngredient(recipeId: number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: { grams?: number | null; food_id?: number | null } }) =>
+    mutationFn: ({ id, patch }: { id: number; patch: { grams?: number | null; food_id?: number | null; prep_id?: number | null } }) =>
       api.patchIngredient(id, patch),
     onSuccess: (data) => {
       qc.setQueryData(['recipe', recipeId], data)
       qc.invalidateQueries({ queryKey: ['recipes'] })
       qc.invalidateQueries({ queryKey: ['plan'] })
+      qc.invalidateQueries({ queryKey: ['prep-stock'] })
     },
   })
 }
@@ -240,9 +354,16 @@ function IngredientRow({ ing, recipeId, editable }: { ing: Ingredient; recipeId:
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{ing.name}{ing.note && <span className="font-normal text-stone-500">, {ing.note}</span>}</p>
           {ing.label && <p className="text-sm text-stone-500">{ing.label}</p>}
-          <button onClick={() => setPickingFood((v) => !v)} disabled={!editable} className="text-xs text-stone-400 enabled:hover:text-ember">
-            {ing.food_name ?? 'no food linked'}
-          </button>
+          <p className="flex flex-wrap items-center gap-x-2 text-xs">
+            {ing.prep_id ? (
+              <Link to={`/recipes/${ing.prep_id}`} className="font-semibold text-ember hover:underline">🫙 {ing.prep_title}</Link>
+            ) : ing.food_id ? (
+              <Link to={`/ingredients/${ing.food_id}`} className="text-stone-400 hover:text-ember hover:underline">
+                {ing.food_name}{ing.food_edited && <span className="ml-1 font-semibold text-ember">· yours</span>}
+              </Link>
+            ) : <span className="text-amber-deep">no food linked</span>}
+            {editable && <button onClick={() => setPickingFood((v) => !v)} className="font-semibold text-stone-400 hover:text-ember" title="Change what it's counted as">⇄</button>}
+          </p>
         </div>
         <div className="flex flex-col items-end">
           {editingGrams ? (
@@ -261,31 +382,63 @@ function IngredientRow({ ing, recipeId, editable }: { ing: Ingredient; recipeId:
         </div>
       </div>
       {pickingFood && (
-        <FoodPicker initial={ing.name} onPick={(foodId) => { setPickingFood(false); patch.mutate({ id: ing.id, patch: { food_id: foodId } }) }} />
+        <FoodPicker initial={ing.name} recipeId={recipeId} isPrep={ing.prep_id != null}
+          onPick={(foodId) => { setPickingFood(false); patch.mutate({ id: ing.id, patch: { food_id: foodId } }) }}
+          onPickPrep={(prepId) => { setPickingFood(false); patch.mutate({ id: ing.id, patch: { prep_id: prepId } }) }} />
       )}
     </li>
   )
 }
 
-function FoodPicker({ initial, onPick }: { initial: string; onPick: (id: number) => void }) {
+/** Pick what an ingredient is counted as: a food, or one of your prepped ingredients. */
+export function FoodPicker({ initial, onPick, onPickPrep, recipeId, isPrep }: {
+  initial: string; onPick: (id: number) => void; onPickPrep?: (id: number | null) => void; recipeId?: number; isPrep?: boolean
+}) {
   const [q, setQ] = useState(initial)
+  const [tab, setTab] = useState<'foods' | 'preps'>(isPrep ? 'preps' : 'foods')
   const dq = useDebounced(q)
-  const foods = useQuery({ queryKey: ['foods', dq], queryFn: () => api.foods(dq), enabled: dq.trim().length > 1 })
+  const foods = useQuery({ queryKey: ['foods', dq], queryFn: () => api.foods(dq), enabled: tab === 'foods' && dq.trim().length > 1 })
+  const preps = useQuery({ queryKey: ['preps'], queryFn: api.preps, enabled: tab === 'preps' })
   return (
     <div className="rise mt-3 rounded-2xl bg-cream p-3">
+      {onPickPrep && (
+        <div className="mb-2 flex gap-1.5">
+          {(['foods', 'preps'] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`press rounded-full px-3 py-1 text-sm font-semibold ${tab === t ? 'bg-ink text-cream' : 'bg-paper ring-1 ring-stone-200'}`}>
+              {t === 'foods' ? 'Foods' : '🫙 Prepped'}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === 'preps' && onPickPrep ? (
+        <ul className="max-h-56 overflow-auto">
+          {preps.data?.filter((p) => p.id !== recipeId).map((p) => (
+            <li key={p.id}>
+              <button onClick={() => onPickPrep(p.id)} className="flex w-full justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-paper">
+                <span className="font-semibold">🫙 {p.title}</span>
+              </button>
+            </li>
+          ))}
+          {preps.data?.filter((p) => p.id !== recipeId).length === 0 && (
+            <li className="px-3 py-2 text-sm text-stone-500">No prepped ingredients yet. Open a recipe like cooked rice and switch on “Prepped ingredient”.</li>
+          )}
+          {isPrep && <li><button onClick={() => onPickPrep(null)} className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-stone-500 hover:bg-paper">Not a prep: count it as a food</button></li>}
+        </ul>
+      ) : <>
       <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search foods…"
         className="w-full rounded-full bg-paper px-4 py-2 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
       <ul className="mt-2 max-h-56 overflow-auto">
         {foods.data?.map((f) => (
           <li key={f.id}>
             <button onClick={() => onPick(f.id)} className="flex w-full justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-paper">
-              <span>{f.name}</span>
+              <span>{f.name}{(f.edited || f.own) && <span className="ml-1 font-semibold text-ember">· yours</span>}</span>
               <span className="shrink-0 text-stone-500">{Math.round(f.kcal)} kcal/100 g</span>
             </button>
           </li>
         ))}
-        {foods.data?.length === 0 && <li className="px-3 py-2 text-sm text-stone-500">No match. Try fewer words.</li>}
+        {foods.data?.length === 0 && <li className="px-3 py-2 text-sm text-stone-500">No match. Try fewer words, or add it as your own food on the Ingredients page.</li>}
       </ul>
+      </>}
     </div>
   )
 }

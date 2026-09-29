@@ -266,26 +266,66 @@ def grams_per_part(ingredients: list[Ingredient], servings: float | None = None)
     return out
 
 
-def macros(grams: float | None, food: Food | None) -> dict[str, float] | None:
+def macros(grams: float | None, food) -> dict[str, float] | None:
+    """Macros for grams of a food (or anything with per-100 g kcal/protein/fat/carbs, like a prep)."""
     if grams is None or food is None:
         return None
     return {m: round(getattr(food, m) * grams / 100, 1) for m in MACROS}
 
 
-def recipe_nutrition(ingredients: list[Ingredient], foods: dict[int, Food], servings: float | None) -> dict:
+def source_of(ing: Ingredient, foods: dict[int, Food], preps: dict[int, object] | None = None):
+    """What an ingredient's nutrition comes from: its prep recipe, else its food."""
+    if ing.prep_id is not None:
+        return (preps or {}).get(ing.prep_id)
+    return foods.get(ing.food_id)
+
+
+def recipe_nutrition(ingredients: list[Ingredient], foods: dict[int, Food], servings: float | None,
+                     preps: dict[int, object] | None = None) -> dict:
     total = dict.fromkeys(MACROS, 0.0)
     left_out, estimated = [], []
+    grams = 0.0
     for ing in ingredients:
-        m = macros(ing.grams, foods.get(ing.food_id))
+        m = macros(ing.grams, source_of(ing, foods, preps))
         if m is None:
-            if (ing.food_id is not None or ing.grams is not None) and ing.grams_source != "alternative":
+            if (ing.food_id is not None or ing.prep_id is not None or ing.grams is not None) and ing.grams_source != "alternative":
                 left_out.append(ing.name)
             continue
         for k in MACROS:
             total[k] += m[k]
+        grams += ing.grams
         if ing.grams_source == "estimate":
             estimated.append(ing.name)
     # (grams_source "alternative": another option for an ingredient already counted; left out quietly.)
     total = {k: round(v, 1) for k, v in total.items()}
     per_serving = {k: round(v / servings, 1) for k, v in total.items()} if servings else None
-    return {"total": total, "per_serving": per_serving, "left_out": left_out, "estimated": estimated}
+    return {"total": total, "per_serving": per_serving, "left_out": left_out, "estimated": estimated,
+            "grams": round(grams, 1)}
+
+
+def prep_yield(recipe, ingredients: list[Ingredient]) -> float | None:
+    """What a prep weighs when done: as set on the recipe, else the weight of what goes in."""
+    if recipe.yield_grams:
+        return recipe.yield_grams
+    grams = sum(i.grams for i in ingredients if i.grams and i.grams_source != "alternative")
+    return round(grams, 1) or None
+
+
+PORTION_WORDS = {"serving", "servings", "portion", "portions", "a serving", "a portion"}
+
+
+def resolve_prep_grams(ing: Ingredient, grams_per_serving: float | None) -> tuple[float | None, str | None]:
+    """Grams of a prepped ingredient: a weight, a spoon/cup measure (as water), or servings of the prep."""
+    if ing.grams_source == "manual":
+        return ing.grams, "manual"
+    label = (ing.label or "").strip()
+    if (weight := weight_in_label(label)) is not None:
+        return weight, "given"
+    if (volume := volume_in_label(label, None)) is not None:
+        return volume[0], "estimate"
+    unit = (ing.unit or "").lower()
+    word = re.sub(r"^~?\s*[\d./]+(?:\s*(?:-|to)\s*[\d./]+)?\s*", "", label.lower()).strip()
+    if grams_per_serving and (unit in PORTION_WORDS or word in PORTION_WORDS or (label and not word)):
+        n = count_from_label(label, ing.amount) or 1
+        return round(n * grams_per_serving, 1), "portion"
+    return None, None

@@ -30,6 +30,8 @@ export default function Profile() {
     <div className="rise mx-auto max-w-4xl">
       <div className="mb-6 flex items-center">
         <h1 className="flex-1 font-display text-4xl font-extrabold sm:text-5xl">Profile</h1>
+        <Link to="/ingredients" title="Ingredients and their macros"
+          className="press mr-2 inline-flex h-11 items-center gap-1.5 rounded-full bg-paper px-4 font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.08)] ring-1 ring-stone-200">🥕 Ingredients</Link>
         <Link to="/settings" aria-label="Settings" title="Settings"
           className="press grid h-11 w-11 place-items-center rounded-full bg-paper text-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] ring-1 ring-stone-200">⚙︎</Link>
       </div>

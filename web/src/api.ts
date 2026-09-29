@@ -11,6 +11,8 @@ export type RecipeSummary = {
   servings: number | null
   tags: string[]
   kcal_per_serving: number | null
+  /** A prepped ingredient (cooked rice, a sauce) that other recipes use by weight. */
+  is_prep: boolean
 }
 
 export type Ingredient = {
@@ -25,6 +27,11 @@ export type Ingredient = {
   aisle: string | null
   food_id: number | null
   food_name: string | null
+  /** Counted with your own version of the food. */
+  food_edited: boolean
+  /** Made from this prepped-ingredient recipe instead of a food. */
+  prep_id: number | null
+  prep_title: string | null
   nutrition: Macros | null
 }
 
@@ -36,6 +43,9 @@ export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
   parent_id: number | null
   parent_title: string | null
   variations: { id: number; title: string }[]
+  /** A prep: your recipes that use it. */
+  used_in: { id: number; title: string }[]
+  yield_grams: number | null
   can_edit: boolean
   slug: string
   source_url: string | null
@@ -52,10 +62,39 @@ export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
     per_serving: Macros | null
     left_out: string[]
     estimated: string[]
+    grams: number
+    /** A prep: what it weighs when done, and per 100 g. */
+    yield_grams: number | null
+    per_100g: Macros | null
   }
 }
 
-export type Food = { id: number; name: string; source: string; kcal: number; protein: number; fat: number; carbs: number }
+/** A food, per 100 g, as you see it (your own version when you've edited it). */
+export type Food = {
+  id: number; name: string; source: string; brand: string; notes: string
+  kcal: number; protein: number; fat: number; carbs: number
+  fiber: number | null; sugar: number | null; sodium_mg: number | null
+  edited: boolean; own: boolean
+}
+export type FoodRow = Food & { recipes: number; names: string[] }
+export type FoodDetail = FoodRow & {
+  default: (Pick<Food, 'name' | 'kcal' | 'protein' | 'fat' | 'carbs' | 'fiber' | 'sugar' | 'sodium_mg'>) | null
+  portions: { unit: string; grams: number }[]
+  category: string | null
+  used_in: { id: number; title: string }[]
+}
+export type FoodIn = Pick<Food, 'name' | 'brand' | 'notes' | 'kcal' | 'protein' | 'fat' | 'carbs' | 'fiber' | 'sugar' | 'sodium_mg'>
+export type Unlinked = { name: string; count: number; recipes: { id: number; title: string }[] }
+export type PrepStock = {
+  entry_id: number; recipe_id: number; title: string; image_url: string | null; day: string | null
+  made_grams: number; discarded: number
+  /** In the fridge now (made, less meals before today and what was thrown out). */
+  grams_now: number
+  /** Spare once the planned meals have taken theirs. */
+  grams_left: number
+  kcal_per_100g: number | null
+  uses: { entry_id: number; day: string | null; title: string; grams: number }[]
+}
 
 export type PlanEntry = {
   id: number
@@ -71,6 +110,12 @@ export type PlanEntry = {
   portions_left: number | null
   discarded: number
   leftover_of: number | null
+  /** Makes a prepped ingredient (made_grams of it); nothing is eaten here. */
+  is_prep: boolean
+  made_grams: number | null
+  grams_left: number | null
+  /** Preps this meal needs that nothing planned covers (the grocery list buys their ingredients). */
+  short: { prep_id: number; title: string; grams: number }[]
 }
 
 export type Plan = { days: Record<string, PlanEntry[]>; queue: PlanEntry[] }
@@ -113,6 +158,7 @@ export type RecipeFilter = {
   maxMinutes: number | null
   kcal: 'light' | 'medium' | 'hearty' | null
   mine: boolean
+  prep: boolean
   sort: 'title' | 'quickest' | 'lowest_kcal' | 'highest_protein' | 'newest'
 }
 export const KCAL_RANGES = { light: ['Under 400', null, 400], medium: ['400–700', 400, 700], hearty: ['Over 700', 700, null] } as const
@@ -131,7 +177,9 @@ export type RecipeIn = {
   category: string | null
   tags: string[]
   notes: string
-  ingredients: { group: string | null; name: string; note: string; label: string }[]
+  is_prep: boolean
+  yield_grams: number | null
+  ingredients: { group: string | null; name: string; note: string; label: string; prep_id: number | null }[]
   steps: { title: string; text: string }[]
 }
 
@@ -170,6 +218,7 @@ export const api = {
     if (f.q.trim()) p.set('q', f.q.trim())
     p.set('sort', f.sort)
     if (f.mine) p.set('mine', 'true')
+    if (f.prep) p.set('prep', 'true')
     if (f.maxMinutes) p.set('max_minutes', String(f.maxMinutes))
     if (f.kcal) {
       const [, min, max] = KCAL_RANGES[f.kcal]
@@ -215,9 +264,20 @@ export const api = {
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
   facets: () => request<Facets>('GET', '/recipes/facets'),
   recipe: (id: number) => request<RecipeDetail>('GET', `/recipes/${id}`),
-  patchIngredient: (id: number, patch: { grams?: number | null; food_id?: number | null }) =>
+  patchIngredient: (id: number, patch: { grams?: number | null; food_id?: number | null; prep_id?: number | null }) =>
     request<RecipeDetail>('PATCH', `/ingredients/${id}`, patch),
+  setPrep: (id: number, patch: { is_prep?: boolean; yield_grams?: number | null }) =>
+    request<RecipeDetail>('PATCH', `/recipes/${id}/prep`, patch),
+  preps: () => request<RecipeSummary[]>('GET', '/recipes?prep=true'),
   foods: (q: string) => request<Food[]>('GET', `/foods?${qs({ q })}`),
+  foodLibrary: () => request<FoodRow[]>('GET', '/foods/library'),
+  food: (id: number) => request<FoodDetail>('GET', `/foods/${id}`),
+  saveFood: (id: number, f: FoodIn) => request<FoodDetail>('PUT', `/foods/${id}`, f),
+  addFood: (f: FoodIn) => request<FoodDetail>('POST', '/foods', f),
+  resetFood: (id: number) => request<{ ok: boolean }>('DELETE', `/foods/${id}`),
+  unlinked: () => request<Unlinked[]>('GET', '/foods/unlinked'),
+  assignFood: (id: number, name: string) => request<{ ingredients: number; recipes: number }>('POST', `/foods/${id}/assign`, { name }),
+  prepStock: () => request<PrepStock[]>('GET', '/prep-stock'),
 
   plan: (start: string, days = 7) => request<Plan>('GET', `/plan?${qs({ start, days })}`),
   addEntry: (e: {
@@ -227,6 +287,7 @@ export const api = {
     title?: string
     servings?: number
     cook_portions?: number | null
+    made_grams?: number | null
     position?: number
   }) => request<PlanEntry>('POST', '/plan', e),
   updateEntry: (
@@ -238,6 +299,7 @@ export const api = {
       title?: string
       cook_portions?: number | null
       discarded?: number
+      made_grams?: number | null
     },
   ) => request<PlanEntry>('PATCH', `/plan/${id}`, patch),
   batches: () => request<PlanEntry[]>('GET', '/batches'),

@@ -7,28 +7,32 @@ import { thumb } from '../format'
 import { refreshPlan } from '../plan'
 
 // The editor's working copy. Ingredients sit in sections ("Sauce", "Toppings"), like the library's.
-type Row = { name: string; label: string; note: string }
+// prep_id: made from one of your prepped ingredients (dropped when the name changes; the server
+// links a name that matches a prep by itself).
+type Row = { name: string; label: string; note: string; prep_id: number | null }
 type Section = { name: string; rows: Row[] }
 type StepRow = { title: string; text: string }
 type Draft = {
   title: string; description: string; image_url: string | null; minutes: string; servings: string; yield_text: string
   cuisine: string; category: string; tags: string[]; video_url: string; source_url: string; notes: string
+  is_prep: boolean; yield_grams: string
   sections: Section[]; steps: StepRow[]
 }
 
-const blankRow = (): Row => ({ name: '', label: '', note: '' })
+const blankRow = (): Row => ({ name: '', label: '', note: '', prep_id: null })
 const empty = (): Draft => ({
   title: '', description: '', image_url: null, minutes: '', servings: '', yield_text: '', cuisine: '', category: '', tags: [],
-  video_url: '', source_url: '', notes: '', sections: [{ name: '', rows: [blankRow()] }], steps: [{ title: '', text: '' }],
+  video_url: '', source_url: '', notes: '', is_prep: false, yield_grams: '', sections: [{ name: '', rows: [blankRow()] }], steps: [{ title: '', text: '' }],
 })
 
 function fromRecipe(r: RecipeDetail): Draft {
   const groups = new Map<string, Row[]>()
-  for (const i of r.ingredients) groups.set(i.group ?? '', [...(groups.get(i.group ?? '') ?? []), { name: i.name, label: i.label, note: i.note }])
+  for (const i of r.ingredients) groups.set(i.group ?? '', [...(groups.get(i.group ?? '') ?? []), { name: i.name, label: i.label, note: i.note, prep_id: i.prep_id }])
   return {
     title: r.title, description: r.description, image_url: r.image_url, minutes: r.total_minutes?.toString() ?? '',
     servings: r.servings?.toString() ?? '', yield_text: r.yield_text ?? '', cuisine: r.cuisine ?? '', category: r.category ?? '',
     tags: r.tags, video_url: r.video_url ?? '', source_url: r.source_url ?? '', notes: r.notes,
+    is_prep: r.is_prep, yield_grams: r.yield_grams?.toString() ?? '',
     sections: groups.size ? [...groups].map(([name, rows]) => ({ name, rows })) : [{ name: '', rows: [blankRow()] }],
     steps: r.steps.length ? r.steps.map((s) => ({ title: s.title, text: s.text })) : [{ title: '', text: '' }],
   }
@@ -39,8 +43,8 @@ const toBody = (d: Draft): RecipeIn => ({
   video_url: d.video_url.trim() || null, source_url: d.source_url.trim() || null,
   servings: d.servings ? Number(d.servings) : null, yield_text: d.yield_text.trim() || null,
   total_minutes: d.minutes ? Number(d.minutes) : null, cuisine: d.cuisine.trim() || null, category: d.category || null,
-  tags: d.tags, notes: d.notes.trim(),
-  ingredients: d.sections.flatMap((s) => s.rows.filter((r) => r.name.trim()).map((r) => ({ group: s.name.trim() || null, name: r.name.trim(), note: r.note.trim(), label: r.label.trim() }))),
+  tags: d.tags, notes: d.notes.trim(), is_prep: d.is_prep, yield_grams: d.is_prep && Number(d.yield_grams) > 0 ? Number(d.yield_grams) : null,
+  ingredients: d.sections.flatMap((s) => s.rows.filter((r) => r.name.trim()).map((r) => ({ group: s.name.trim() || null, name: r.name.trim(), note: r.note.trim(), label: r.label.trim(), prep_id: r.prep_id }))),
   steps: d.steps.filter((s) => s.text.trim()).map((s) => ({ title: s.title.trim(), text: s.text.trim() })),
 })
 
@@ -61,6 +65,8 @@ export default function RecipeEditor() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const facets = useQuery({ queryKey: ['facets'], queryFn: api.facets })
+  const preps = useQuery({ queryKey: ['preps'], queryFn: api.preps })
+  const prepNamed = (name: string) => preps.data?.find((p) => p.id !== id && p.title.trim().toLowerCase().replace(/s$/, '') === name.trim().toLowerCase().replace(/s$/, ''))
   const existing = useQuery({ queryKey: ['recipe', id], queryFn: () => api.recipe(id!), enabled: id != null })
   const [d, setD] = useState<Draft | null>(id == null ? empty() : null)
   const [original, setOriginal] = useState<string>(id == null ? JSON.stringify(toBody(empty())) : '')
@@ -154,6 +160,24 @@ export default function RecipeEditor() {
         <Field label="Makes" value={d.servings} onChange={(v) => set({ servings: v.replace(/[^\d.]/g, '').slice(0, 4) })} placeholder="Servings" />
       </div>
       <Field value={d.yield_text} onChange={(v) => set({ yield_text: v })} placeholder="Yield as you'd say it, e.g. 3-4 burritos (optional)" />
+      <div className={`mt-3 rounded-2xl p-4 ring-1 ${d.is_prep ? 'bg-ember-soft ring-transparent' : 'bg-paper ring-stone-200'}`}>
+        <label className="flex cursor-pointer items-center gap-3">
+          <input type="checkbox" checked={d.is_prep} onChange={(e) => set({ is_prep: e.target.checked })} className="h-5 w-5 accent-ember-bright" />
+          <span className="flex-1">
+            <span className="block font-semibold">🫙 Prepped ingredient</span>
+            <span className="block text-sm text-stone-500">Cooked rice, pickled onions, a sauce: other recipes use it by weight, and what you make goes in the fridge.</span>
+          </span>
+        </label>
+        {d.is_prep && (
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <span className="font-semibold">Weighs when done</span>
+            <input value={d.yield_grams} inputMode="decimal" onChange={(e) => set({ yield_grams: e.target.value.replace(/[^\d.]/g, '').slice(0, 6) })}
+              placeholder="auto" className={`${small} w-24 text-right`} />
+            <span>g</span>
+            <span className="text-xs text-stone-500">blank: what the ingredients weigh</span>
+          </label>
+        )}
+      </div>
       <Group title="Meal">{meals.map((c) => <Chip key={c} selected={d.category === c} onClick={() => set({ category: d.category === c ? '' : c })}>{c}</Chip>)}</Group>
       <Field label="Cuisine" value={d.cuisine} onChange={(v) => set({ cuisine: v })} placeholder="Cuisine, e.g. Indian" list="cuisines" />
       <datalist id="cuisines">{facets.data?.cuisines.map((c) => <option key={c} value={c} />)}</datalist>
@@ -164,7 +188,8 @@ export default function RecipeEditor() {
       ))}
 
       <h2 className="mt-10 font-display text-3xl font-bold">Ingredients</h2>
-      <p className="mb-3 text-sm text-stone-500">Write amounts the way you'd say them: 200 g, 2 cloves, 1 tbsp, a drizzle. Calories are worked out when you save.</p>
+      <p className="mb-3 text-sm text-stone-500">Write amounts the way you'd say them: 200 g, 2 cloves, 1 tbsp, a drizzle. Calories are worked out when you save. Name one of your prepped ingredients (e.g. 300 g cooked rice) to use it.</p>
+      <datalist id="preps">{preps.data?.filter((p) => p.id !== id).map((p) => <option key={p.id} value={p.title} />)}</datalist>
       {d.sections.map((s, si) => (
         <div key={si} className="mb-3 rounded-3xl bg-paper p-4 ring-1 ring-stone-200">
           <div className="flex items-center gap-2">
@@ -178,7 +203,13 @@ export default function RecipeEditor() {
               <div key={ri} className="mt-2 flex items-start gap-2">
                 <input value={r.label} onChange={(e) => setRow({ label: e.target.value })} placeholder="Amount" className={`${small} w-28`} />
                 <div className="flex flex-1 flex-col gap-1.5 sm:flex-row">
-                  <input value={r.name} onChange={(e) => setRow({ name: e.target.value })} placeholder="Ingredient" className={`${small} flex-1`} />
+                  <div className="relative flex flex-1">
+                    <input value={r.name} onChange={(e) => setRow({ name: e.target.value, prep_id: null })} placeholder="Ingredient" list="preps"
+                      className={`${small} flex-1 ${r.prep_id || prepNamed(r.name) ? 'pr-16' : ''}`} />
+                    {(r.prep_id || prepNamed(r.name)) && (
+                      <span title="Uses your prepped ingredient" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ember-bright px-2 py-0.5 text-[11px] font-bold text-on-go">🫙 prep</span>
+                    )}
+                  </div>
                   <input value={r.note} onChange={(e) => setRow({ note: e.target.value })} placeholder="Note, e.g. diced (optional)" className={`${small} flex-1`} />
                 </div>
                 <IconBtn label="Remove ingredient" onClick={() => setSection(si, { ...s, rows: s.rows.length > 1 ? s.rows.filter((_, j) => j !== ri) : [blankRow()] })}>✕</IconBtn>

@@ -10,10 +10,10 @@ const SORTS: [RecipeFilter['sort'], string][] = [
   ['title', 'A–Z'], ['quickest', 'Quickest'], ['lowest_kcal', 'Fewest calories'], ['highest_protein', 'Most protein'], ['newest', 'Newest'],
 ]
 const TIMES = [15, 30, 45, 60]
-const EMPTY: RecipeFilter = { q: '', cuisines: [], categories: [], tags: [], maxMinutes: null, kcal: null, mine: false, sort: 'title' }
+const EMPTY: RecipeFilter = { q: '', cuisines: [], categories: [], tags: [], maxMinutes: null, kcal: null, mine: false, prep: false, sort: 'title' }
 
 const count = (f: RecipeFilter) =>
-  f.cuisines.length + f.categories.length + f.tags.length + (f.maxMinutes ? 1 : 0) + (f.kcal ? 1 : 0) + (f.mine ? 1 : 0)
+  f.cuisines.length + f.categories.length + f.tags.length + (f.maxMinutes ? 1 : 0) + (f.kcal ? 1 : 0) + (f.mine ? 1 : 0) + (f.prep ? 1 : 0)
 const toggle = (list: string[], x: string) => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x])
 
 /** The filter lives in the address (?q=…&tag=…), so a filtered list can be bookmarked and Back restores it. */
@@ -27,6 +27,7 @@ function useFilter(): [RecipeFilter, (f: RecipeFilter) => void] {
     maxMinutes: params.get('max') ? Number(params.get('max')) : null,
     kcal: (params.get('kcal') as RecipeFilter['kcal']) || null,
     mine: params.get('mine') === '1',
+    prep: params.get('prep') === '1',
     sort: (params.get('sort') as RecipeFilter['sort']) || 'title',
   }
   const set = (n: RecipeFilter) => {
@@ -38,6 +39,7 @@ function useFilter(): [RecipeFilter, (f: RecipeFilter) => void] {
     if (n.maxMinutes) p.set('max', String(n.maxMinutes))
     if (n.kcal) p.set('kcal', n.kcal)
     if (n.mine) p.set('mine', '1')
+    if (n.prep) p.set('prep', '1')
     if (n.sort !== 'title') p.set('sort', n.sort)
     setParams(p, { replace: true })
   }
@@ -85,13 +87,17 @@ export default function Recipes() {
       <div className="-mx-5 mt-4 flex gap-2 overflow-x-auto px-5 pb-2 [scrollbar-width:none]">
         <Chip selected={n === 0} onClick={() => setFilter({ ...EMPTY, q: filter.q, sort: filter.sort })}>All</Chip>
         <Chip selected={filter.mine} onClick={() => setFilter({ ...filter, mine: !filter.mine })}>My recipes</Chip>
+        <Chip selected={filter.prep} onClick={() => setFilter({ ...filter, prep: !filter.prep })}>🫙 Prepped</Chip>
         {facets.data?.categories.map((c) => (
           <Chip key={c} selected={filter.categories.includes(c)} onClick={() => setFilter({ ...filter, categories: toggle(filter.categories, c) })}>{c}</Chip>
         ))}
       </div>
 
       {recipes.isError && <p className="mt-6 text-danger">Couldn't load recipes: {String(recipes.error)}</p>}
-      {recipes.data?.length === 0 && (filter.mine && n === 1 && !filter.q
+      {recipes.data?.length === 0 && (filter.prep && n === 1 && !filter.q
+        ? <Empty emoji="🫙" title="No prepped ingredients yet"
+            body="Mark a recipe like cooked rice, pickled onions or a sauce as a prepped ingredient (on its page), and other recipes can use it by weight." />
+        : filter.mine && n === 1 && !filter.q
         ? <Empty emoji="🧑‍🍳" title="No recipes of your own yet" body="Write one: ingredients, steps and a photo, like the rest of the library."
             action={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
         : <Empty emoji="🔍" title="No recipes found" body="Try another word, or fewer filters." />)}
@@ -108,6 +114,7 @@ export default function Recipes() {
               {r.kcal_per_serving ? (
                 <span className="absolute bottom-2.5 left-2.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-black backdrop-blur">{Math.round(r.kcal_per_serving)} kcal</span>
               ) : null}
+              {r.is_prep && <span className="absolute left-2.5 top-2.5 rounded-full bg-ember-bright px-2.5 py-1 text-xs font-bold text-on-go">🫙 Prep</span>}
             </div>
             <h3 className="mt-3 line-clamp-2 font-display text-lg font-bold leading-snug">{r.title}</h3>
             <p className="text-sm text-stone-500">{[r.total_minutes && `${r.total_minutes} min`, r.cuisine].filter(Boolean).join(' · ')}</p>

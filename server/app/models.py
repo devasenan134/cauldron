@@ -35,6 +35,10 @@ class RecipeBase(SQLModel):
     # Nutrition as published by the source, for the whole recipe.
     source_nutrition: dict | None = Field(default=None, sa_type=JSON)
     notes: str = ""
+    # A prepped ingredient (cooked rice, pickled onions, a sauce): other recipes use it by weight,
+    # and what you make goes in the fridge.
+    is_prep: bool = False
+    yield_grams: float | None = None  # what the whole recipe weighs when done; None = its ingredients' weight
 
 
 class Recipe(RecipeBase, table=True):
@@ -60,6 +64,8 @@ class Ingredient(SQLModel, table=True):
     # how grams was found: given | portion | parts | estimate | manual; None = not counted
     grams_source: str | None = None
     food_id: int | None = Field(default=None, foreign_key="food.id")
+    # Made from a prepped-ingredient recipe instead of a food ("150 g cooked rice").
+    prep_id: int | None = Field(default=None, foreign_key="recipe.id", ondelete="SET NULL")
     aisle: str | None = None
 
 
@@ -72,11 +78,19 @@ class Step(SQLModel, table=True):
 
 
 class Food(SQLModel, table=True):
-    """A food with nutrients per 100 g: USDA (FoodData Central) or user-made."""
+    """A food with nutrients per 100 g: USDA (FoodData Central), built in, or a user's.
+
+    A user's food either stands alone (their own, e.g. a product off a label) or, with base_id,
+    is their version of a shared food: it replaces that food in every recipe they see.
+    """
     id: int | None = Field(default=None, primary_key=True)
     fdc_id: int | None = Field(default=None, unique=True)
     name: str = Field(index=True)
-    source: str  # usda_foundation | usda_sr_legacy | custom
+    source: str  # usda_foundation | usda_sr_legacy | custom | user
+    owner_id: int | None = Field(default=None, foreign_key="user.id", index=True)  # None = shared
+    base_id: int | None = Field(default=None, foreign_key="food.id", index=True)
+    brand: str = ""
+    notes: str = ""
     category: str | None = None
     kcal: float = 0
     protein: float = 0
@@ -103,7 +117,9 @@ class PlanEntry(SQLModel, table=True):
     cook_portions: float | None = None
     # A leftover meal: eats servings portions of the batch cooked by that entry.
     leftover_of: int | None = Field(default=None, foreign_key="planentry.id", ondelete="CASCADE", index=True)
-    discarded: float = 0  # batch portions thrown away
+    discarded: float = 0  # batch portions (or prep grams) thrown away
+    # Cooking a prepped ingredient: grams made. Meals that use it draw on it, the rest is in the fridge.
+    made_grams: float | None = None
     created_at: datetime = Field(default_factory=now)
 
 

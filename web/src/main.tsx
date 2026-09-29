@@ -9,6 +9,7 @@ import Layout from './components/Layout.tsx'
 import './index.css'
 import Fridge from './pages/Fridge.tsx'
 import Home from './pages/Home.tsx'
+import Ingredients, { FoodPage } from './pages/Ingredients.tsx'
 import Profile, { Folder } from './pages/Profile.tsx'
 import Settings from './pages/Settings.tsx'
 import Grocery from './pages/Grocery.tsx'
@@ -43,6 +44,8 @@ const router = createBrowserRouter(createRoutesFromElements(
     <Route path="profile" element={<Profile />} />
     <Route path="folders/:id" element={<Folder />} />
     <Route path="settings" element={<Settings />} />
+    <Route path="ingredients" element={<Ingredients />} />
+    <Route path="ingredients/:id" element={<FoodPage />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Route>,
 ))

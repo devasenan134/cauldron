@@ -13,8 +13,8 @@ from .recipes import SHARED_SOURCE, RecipeSummary, nutrition_for, owned_recipe
 router = APIRouter()
 
 
-def summaries(session: Session, recipes: list[Recipe]) -> list[RecipeSummary]:
-    nutrition = nutrition_for(session, recipes)
+def summaries(session: Session, recipes: list[Recipe], user: User) -> list[RecipeSummary]:
+    nutrition = nutrition_for(session, recipes, user)
     return [RecipeSummary(**r.model_dump(), kcal_per_serving=(nutrition[r.id]["per_serving"] or {}).get("kcal")) for r in recipes]
 
 
@@ -73,7 +73,7 @@ class CookedOut(SQLModel):
 def cooked(limit: int = 200, session: Session = Depends(get_session), user: User = Depends(current_user)):
     entries = cooked_entries(session, user)[:limit]
     recipes = {r.id: r for r in session.exec(select(Recipe).where(col(Recipe.id).in_({e.recipe_id for e in entries})))}
-    by_id = {s.id: s for s in summaries(session, list(recipes.values()))}
+    by_id = {s.id: s for s in summaries(session, list(recipes.values()), user)}
     return [CookedOut(day=e.day, entry_id=e.id, servings=e.servings, batch=e.cook_portions, recipe=by_id[e.recipe_id])
             for e in entries if e.recipe_id in by_id]
 
@@ -106,7 +106,7 @@ def catalog(session: Session = Depends(get_session), user: User = Depends(curren
     favs = list(session.exec(select(Recipe).join(Favorite, Favorite.recipe_id == Recipe.id)
                              .where(Favorite.owner_id == user.id).order_by(col(Favorite.created_at).desc())))
     folders = session.exec(select(Folder).where(Folder.owner_id == user.id).order_by(Folder.name)).all()
-    return CatalogOut(mine=summaries(session, mine), favorites=summaries(session, favs), folders=[folder_out(session, f) for f in folders])
+    return CatalogOut(mine=summaries(session, mine, user), favorites=summaries(session, favs, user), folders=[folder_out(session, f) for f in folders])
 
 
 @router.put("/favorites/{recipe_id}")
@@ -176,7 +176,7 @@ def get_folder(folder_id: int, session: Session = Depends(get_session), user: Us
     folder = owned_folder(session, folder_id, user)
     rows = list(session.exec(select(Recipe).join(FolderRecipe, FolderRecipe.recipe_id == Recipe.id)
                              .where(FolderRecipe.folder_id == folder.id).order_by(col(FolderRecipe.added_at).desc())))
-    return FolderDetail(id=folder.id, name=folder.name, recipes=summaries(session, rows))
+    return FolderDetail(id=folder.id, name=folder.name, recipes=summaries(session, rows, user))
 
 
 @router.put("/folders/{folder_id}/recipes/{recipe_id}")

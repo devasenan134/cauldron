@@ -6,8 +6,9 @@ from sqlmodel import Session, SQLModel, col, delete, select
 
 from ..db import get_session
 from ..deps import current_user
-from ..models import GroceryTemplate, GroceryItem, Ingredient, PlanEntry, Recipe, User
+from ..models import GroceryTemplate, GroceryItem, Ingredient, PlanEntry, User
 from ..nutrition import count_from_label
+from ..prep import MAX_DEPTH, factor, ledger
 
 router = APIRouter()
 
@@ -90,28 +91,42 @@ def list_items(session: Session = Depends(get_session), user: User = Depends(cur
 
 @router.post("/grocery/generate", response_model=list[GroceryItem])
 def generate(body: GenerateIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
-    """Rebuild the list from planned meals. Hand-added items stay; ticks carry over by name."""
+    """Rebuild the list from planned meals. Hand-added items stay; ticks carry over by name.
+
+    Preps made in the range are bought for like any recipe. A meal using a prep takes it from the
+    fridge or a planned prep session; whatever's not covered is bought as the prep's ingredients.
+    """
     in_range = (PlanEntry.day >= body.start) & (PlanEntry.day <= body.end)
     where = (in_range | col(PlanEntry.day).is_(None)) if body.include_queue else in_range
     entries = session.exec(select(PlanEntry).where(PlanEntry.owner_id == user.id, where,
                                                    col(PlanEntry.recipe_id).is_not(None))).all()
-    recipes = {r.id: r for r in session.exec(select(Recipe).where(col(Recipe.id).in_({e.recipe_id for e in entries})))}
-    ings = session.exec(select(Ingredient).where(col(Ingredient.recipe_id).in_(recipes)).order_by(Ingredient.position)).all()
-    by_recipe: dict[int, list[Ingredient]] = {}
-    for i in ings:
-        by_recipe.setdefault(i.recipe_id, []).append(i)
+    book = ledger(session, user)
+    kitchen = book.kitchen
 
     tallies: dict[str, Tally] = {}
-    for e in entries:
-        recipe = recipes[e.recipe_id]
-        portions = e.cook_portions if e.cook_portions is not None else e.servings
-        factor = portions / recipe.servings if recipe.servings else 1
-        for ing in by_recipe.get(recipe.id, []):
+
+    def buy(recipe_id: int, times: float, source: str, short: dict[int, float] | None, depth: int = 0) -> None:
+        """Add times x the recipe's ingredients. short: prep grams to buy for (None: all of them)."""
+        for ing in kitchen.ings.get(recipe_id, []):
+            if ing.prep_id:
+                need = (ing.grams or 0) * times
+                take = need if short is None else min(need, short.get(ing.prep_id, 0))
+                if short is not None:
+                    short[ing.prep_id] = short.get(ing.prep_id, 0) - take
+                full = kitchen.yield_of(ing.prep_id)
+                if take > 0 and full and depth < MAX_DEPTH:
+                    buy(ing.prep_id, take / full, kitchen.recipes[ing.prep_id].title, None, depth + 1)
+                continue
             key = ing.name.strip().lower()
             if key in SKIP:
                 continue
             tally = tallies.setdefault(key, Tally(ing.name.strip(), ing.aisle))
-            tally.add(ing, factor, recipe.title)
+            tally.add(ing, times, source)
+
+    for e in entries:
+        recipe = kitchen.recipes[e.recipe_id]
+        short = {p: g for (eid, p), g in book.short.items() if eid == e.id}
+        buy(recipe.id, factor(e, recipe, kitchen), recipe.title, short)
 
     old = session.exec(select(GroceryItem).where(GroceryItem.owner_id == user.id, GroceryItem.manual == False)).all()  # noqa: E712
     was_checked = {i.name.lower() for i in old if i.checked}

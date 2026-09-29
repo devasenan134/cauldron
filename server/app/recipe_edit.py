@@ -4,6 +4,8 @@ Each ingredient is written as a name plus a quantity as you'd say it ("200 g", "
 "1 tbsp", "a drizzle"). Saving finds a food for it (the hand-checked Cook Well map first, then the
 best-named USDA food) and works out its weight, so the recipe gets calories straight away. Fixes
 made by hand on the recipe page (a weight or a food) survive later edits of the same ingredient.
+
+An ingredient named like one of your prepped-ingredient recipes ("pickled onions") uses that prep.
 """
 import re
 
@@ -12,7 +14,7 @@ from sqlmodel import Session, SQLModel, col, delete, or_, select
 from .foodlink import ensure_custom_foods, food_index
 from .foodmap import FOOD_FOR
 from .models import Food, Ingredient, Recipe, Step, now
-from .nutrition import VAGUE, grams_per_part, mark_alternatives, resolve_grams
+from .nutrition import VAGUE, grams_per_part, mark_alternatives, resolve_grams, resolve_prep_grams
 
 
 class IngredientIn(SQLModel):
@@ -24,6 +26,7 @@ class IngredientIn(SQLModel):
     # amounts we can't weigh ourselves ("1 wedge"). Not stored.
     food_hint: str | None = None
     grams_hint: float | None = None
+    prep_id: int | None = None  # made from this prepped-ingredient recipe
 
 
 class StepIn(SQLModel):
@@ -44,6 +47,8 @@ class RecipeIn(SQLModel):
     category: str | None = None
     tags: list[str] = []
     notes: str = ""
+    is_prep: bool = False
+    yield_grams: float | None = None
     ingredients: list[IngredientIn] = []
     steps: list[StepIn] = []
 
@@ -67,7 +72,8 @@ FILLER = {"and", "with", "the", "for", "fresh", "large", "small", "medium", "cho
           "boneless", "skinless", "organic", "homemade", "store", "bought", "optional", "plain"}
 # Everyday words and what USDA calls them.
 SYNONYMS = {"wrap": "tortilla", "passata": "puree", "scallion": "onion", "cilantro": "coriander", "zucchini": "squash",
-            "eggplant": "eggplant", "chili": "chili", "chilli": "chili", "yoghurt": "yogurt", "prawn": "shrimp"}
+            "eggplant": "eggplant", "chili": "chili", "chilli": "chili", "yoghurt": "yogurt", "prawn": "shrimp",
+            "curd": "yogurt", "dahi": "yogurt"}
 # Ready-made versions of a food; only chosen when asked for.
 PROCESSED = ("breaded", "battered", "fried", "tenders", "nuggets", "frozen", "prepared", "fast", "restaurant",
              "babyfood", "patties", "sticks", "dehydrated", "mix")
@@ -77,13 +83,21 @@ def _stem(w: str) -> str:
     return w[:-3] + "y" if w.endswith("ies") else w[:-2] if w.endswith(("oes", "ches", "shes")) else w.rstrip("s")
 
 
-def guess_food(session: Session, name: str, index: dict[str, Food], hint: str | None = None) -> Food | None:
-    """The hand-checked Cook Well mapping if it knows the name, else the best-named food.
+def guess_food(session: Session, name: str, index: dict[str, Food], hint: str | None = None,
+               owner_id: int | None = None) -> Food | None:
+    """One of your own foods by that name, the hand-checked Cook Well mapping, else the best-named food.
 
     [hint] is a plain grocery name for the same thing ("nonfat evaporated milk" for "evap milk 0%"),
     tried first. Foods are ranked by how many of the words they share, so one odd word ("sieved")
     doesn't send the search off to a different food.
     """
+    name = re.sub(r"\bbean\s*curd\b", "tofu", name, flags=re.I)  # not curd (yogurt)
+    if owner_id is not None:
+        for key in [k.strip() for k in (name, hint) if k and k.strip()]:
+            own = session.exec(select(Food).where(Food.owner_id == owner_id, col(Food.base_id).is_(None),
+                                                  col(Food.name).ilike(key))).first()
+            if own:
+                return own
     for key in [k.lower().strip() for k in (name, hint) if k]:
         for variant in (key, key + "s", key.rstrip("s"), key + "es"):
             if (target := FOOD_FOR.get(variant)) and target in index:
@@ -99,8 +113,9 @@ def guess_food(session: Session, name: str, index: dict[str, Food], hint: str | 
         # Foods with all the words first; only if there are none, any of them.
         # Foods with all the words first; only if there are none, the foods with each word (a common
         # word like "ground" must not crowd out the rare one, "cumin").
-        strict = list(session.exec(select(Food).where(*[col(Food.name).ilike(f"%{w}%") for w in words[:5]]).limit(3000)))
-        per_word = {w: [] if strict else list(session.exec(select(Food).where(col(Food.name).ilike(f"%{w}%")).limit(1500))) for w in words[:5]}
+        shared = col(Food.owner_id).is_(None)
+        strict = list(session.exec(select(Food).where(shared, *[col(Food.name).ilike(f"%{w}%") for w in words[:5]]).limit(3000)))
+        per_word = {w: [] if strict else list(session.exec(select(Food).where(shared, col(Food.name).ilike(f"%{w}%")).limit(1500))) for w in words[:5]}
         candidates = strict or {f.id: f for fs in per_word.values() for f in fs}.values()
         # Rare words say more about the food than common ones ("cumin" vs "ground").
         weight = {w: 1.0 if strict else 1.0 / (1 + len(per_word[w])) ** 0.35 for w in words}
@@ -137,6 +152,7 @@ def guess_food(session: Session, name: str, index: dict[str, Food], hint: str | 
 def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
     """Write body into recipe (new or existing), replacing its ingredients and steps."""
     fields = body.model_dump(exclude={"ingredients", "steps"})
+    fields["yield_grams"] = body.yield_grams if body.yield_grams and body.yield_grams > 0 else None
     fields["title"] = fields["title"].strip()
     fields["tags"] = [t.strip() for t in body.tags if t.strip()]
     for k, v in fields.items():
@@ -153,6 +169,8 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
 
     ensure_custom_foods(session)
     index = food_index(session)
+    preps = visible_preps(session, recipe.owner_id)
+    by_title = {_stem(r.title.lower().strip()): r.id for r in preps.values() if r.id != recipe.id}
     ings = []
     hints: dict[int, float] = {}  # ingredient index -> weight guess from an import
     for pos, i in enumerate(x for x in body.ingredients if x.name.strip()):
@@ -165,16 +183,19 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
             ing.amount, ing.unit = prev.amount, prev.unit
             if prev.grams_source in ("manual", "given"):
                 ing.grams, ing.grams_source = prev.grams, prev.grams_source
-        ing.food_id = prev.food_id if prev and prev.food_id else (f.id if (f := guess_food(session, ing.name, index, i.food_hint)) else None)
+        # A prep: as chosen, as it was, or (a new ingredient) one of your preps by the same name.
+        ing.prep_id = (i.prep_id if i.prep_id in preps and i.prep_id != recipe.id
+                       else prev.prep_id if prev else by_title.get(_stem(ing.name.lower())))
+        if ing.prep_id:
+            ing.food_id = None
+        else:
+            ing.food_id = prev.food_id if prev and prev.food_id else (
+                f.id if (f := guess_food(session, ing.name, index, i.food_hint, recipe.owner_id)) else None)
         ing.aisle = prev.aisle if prev else None
         if i.grams_hint:
             hints[len(ings)] = i.grams_hint
         ings.append(ing)
-    by_id = {f.id: f for f in session.exec(select(Food).where(col(Food.id).in_({i.food_id for i in ings if i.food_id})))}
-    per_part = grams_per_part(ings, recipe.servings)
-    for ing in ings:
-        ing.aisle = ing.aisle or aisle_for(by_id.get(ing.food_id))
-        ing.grams, ing.grams_source = resolve_grams(ing, by_id.get(ing.food_id), per_part.get(ing.group), recipe.servings)
+    resolve_weights(session, recipe, ings)
     # Where we could only guess (or not weigh it at all), an import's own weight guess for that
     # exact amount is better than our typical-serving one.
     for n, grams in hints.items():
@@ -188,6 +209,47 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
     session.commit()
     session.refresh(recipe)
     return recipe
+
+
+def visible_preps(session: Session, owner_id: int) -> dict[int, Recipe]:
+    """Prepped-ingredient recipes this user can use: their own and the shared library's."""
+    from .routes.recipes import SHARED_SOURCE
+    stmt = select(Recipe).where(Recipe.is_prep == True, or_(Recipe.owner_id == owner_id, Recipe.source == SHARED_SOURCE))  # noqa: E712
+    return {r.id: r for r in session.exec(stmt)}
+
+
+def resolve_weights(session: Session, recipe: Recipe, ings: list[Ingredient], only: set[int] | None = None) -> None:
+    """Work out each ingredient's grams (and aisle): from its food, or for a prep, from the prep.
+
+    With only, just those ingredients (by id); the rest keep what they have.
+    """
+    from .prep import Kitchen
+    by_id = {f.id: f for f in session.exec(select(Food).where(col(Food.id).in_({i.food_id for i in ings if i.food_id})))}
+    prep_ids = {i.prep_id for i in ings if i.prep_id}
+    kitchen = Kitchen(session, None, list(session.exec(select(Recipe).where(col(Recipe.id).in_(prep_ids))))) if prep_ids else None
+    per_part = grams_per_part(ings, recipe.servings)
+    for ing in ings:
+        if only is not None and ing.id not in only:
+            continue
+        if ing.prep_id and kitchen and ing.prep_id in kitchen.recipes:
+            prep = kitchen.recipes[ing.prep_id]
+            full = kitchen.yield_of(prep.id)
+            ing.grams, ing.grams_source = resolve_prep_grams(ing, full / prep.servings if full and prep.servings else None)
+            continue
+        ing.aisle = ing.aisle or aisle_for(by_id.get(ing.food_id))
+        ing.grams, ing.grams_source = resolve_grams(ing, by_id.get(ing.food_id), per_part.get(ing.group), recipe.servings)
+
+
+def relink_recipe(session: Session, recipe: Recipe, only: set[int] | None = None) -> None:
+    """Work the weights out again after a food or prep changed (hand-set weights stay)."""
+    ings = list(session.exec(select(Ingredient).where(Ingredient.recipe_id == recipe.id)))
+    for ing in ings:
+        if (only is None or ing.id in only) and ing.grams_source not in ("manual", "given"):
+            ing.grams, ing.grams_source = None, None
+    resolve_weights(session, recipe, ings, only)
+    mark_alternatives(ings)
+    for ing in ings:
+        session.add(ing)
 
 
 # USDA food categories -> the grocery list's aisles.

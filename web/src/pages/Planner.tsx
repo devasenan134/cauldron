@@ -275,6 +275,46 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
   }
   const isBatch = entry.cook_portions != null
   const stop = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }
+  const shortfall = entry.short.length > 0 && (
+    <p className="mt-1.5 rounded-xl bg-pink-soft px-2 py-1 text-[11px] font-semibold text-pink-deep" {...stop}
+      title="Nothing planned makes enough of it; the grocery list buys its ingredients instead">
+      Needs {entry.short.map((x) => `${Math.round(x.grams)} g ${x.title.toLowerCase()}`).join(', ')}: buying the ingredients
+    </p>
+  )
+
+  // Making a prepped ingredient: by weight, and it all goes to the fridge.
+  if (entry.is_prep) {
+    const setMade = () => {
+      const v = prompt(`How many grams of ${entry.title} are you making?`, String(Math.round(entry.made_grams ?? 0)))
+      if (v == null || !(Number(v) > 0)) return
+      const g = Number(v)
+      optimistic((e) => ({ ...e, made_grams: g, grams_left: (e.grams_left ?? 0) + g - (e.made_grams ?? 0) }))
+      update.mutate({ made_grams: g })
+    }
+    return (
+      <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
+        className={`group relative cursor-grab touch-manipulation rounded-2xl bg-ember-soft p-2 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
+        <div className="flex gap-2">
+          {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-ember">🫙 Prep</div>
+            <Link to={`/recipes/${entry.recipe_id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-ember" {...stop}>{entry.title}</Link>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-1 text-xs" {...stop}>
+          <button onClick={setMade} className="rounded-lg bg-paper/70 px-2 py-1 font-semibold hover:bg-paper" title="Change how much you make">
+            makes {Math.round(entry.made_grams ?? 0)} g
+          </button>
+          <span className={`font-semibold ${(entry.grams_left ?? 0) < 1 ? 'text-stone-500' : 'text-ember'}`}>
+            {(entry.grams_left ?? 0) < 1 ? 'all used' : `${Math.round(entry.grams_left!)} g spare`}
+          </span>
+        </div>
+        {shortfall}
+        <button {...stop} onClick={() => remove.mutate()} title="Remove"
+          className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+      </div>
+    )
+  }
 
   // A note ("Dinner at Priya's"): text only. Click to edit; drag to move like a meal.
   if (entry.recipe_id == null && entry.leftover_of == null) {
@@ -322,6 +362,7 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
             {entry.portions_left! < 0 ? `${num(-entry.portions_left!)} more planned than cooked` : `${plural(entry.portions_left!, 'portion')} for later`}
             <button className="hidden text-stone-400 hover:text-ink group-hover:inline" title="Not a batch" onClick={() => setCook(null)}>✕</button>
           </div>
+          {shortfall}
         </div>
       ) : (
         entry.recipe_id != null && !entry.leftover_of && (
@@ -329,6 +370,7 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
             className="mt-1 hidden text-xs font-semibold text-amber-deep hover:underline group-hover:block">+ batch cook</button>
         )
       )}
+      {!isBatch && shortfall}
       <button {...stop} onClick={() => remove.mutate()} title={isBatch ? 'Remove (and its leftovers)' : 'Remove'}
         className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
     </div>
