@@ -1,5 +1,7 @@
-"""Import a recipe from a video: YouTube (videos and Shorts) and Instagram Reels.
+"""Import a recipe from a video (YouTube videos and Shorts, Instagram Reels), a recipe web page,
+or a file (a PDF, or a photo of a cookbook page or recipe card).
 
+Videos:
 1. yt-dlp reads the video's page: title, description, creator, thumbnail, length.
 2. Gemini watches the video (sound and on-screen text) and reads the description, and writes the
    recipe in the library's shape: sections, ingredients with amounts as written, steps, servings,
@@ -9,9 +11,19 @@
    macros are calculated even when the creator gives none.
 
 YouTube links go to Gemini as they are. Instagram Reels are downloaded (small) and sent inline, or
-through the Files API when large. Imports run one at a time in the background; the app polls.
+through the Files API when large.
+
+Web pages: the server reads the page itself and hands Gemini the site's schema.org Recipe data
+(most recipe sites publish it) plus the page's text, so Gemini skips the life story and the ads.
+A link straight to a PDF is imported like an uploaded PDF.
+
+Files: uploaded to POST /import/file, kept in data/imports/ until the import is done, and sent to
+Gemini as they are (Gemini reads PDFs and photos natively).
+
+Imports run one at a time in the background; the app polls.
 """
 import base64
+import html
 import json
 import logging
 import os
@@ -38,7 +50,17 @@ GEMINI = "https://generativelanguage.googleapis.com"
 # Netscape cookies file exported from a browser signed in to Instagram (Reels often need it).
 COOKIES = os.environ.get("CAULDRON_COOKIES", str(DB_PATH.parent / "cookies.txt"))
 IMAGE_DIR = Path(os.environ.get("CAULDRON_IMAGE_DIR", DB_PATH.parent / "images"))
-INLINE_MAX = 15 * 1024 * 1024  # bigger videos go through the Files API
+UPLOAD_DIR = Path(os.environ.get("CAULDRON_IMPORT_DIR", DB_PATH.parent / "imports"))
+INLINE_MAX = 15 * 1024 * 1024  # bigger videos and files go through the Files API
+FILE_MAX = 40 * 1024 * 1024
+FILE_TYPES = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+              "image/heic": "heic", "image/heif": "heif"}
+# Recipe files other apps export (Mealie, Paprika, Tandoor…) or plain notes: read as text.
+TEXT_EXTS = {"yaml", "yml", "json", "txt", "md", "markdown", "xml", "csv"}
+TEXT_MAX = 400_000  # characters
+# Some recipe sites turn away anything that doesn't look like a browser.
+BROWSER = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+           "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8", "Accept-Language": "en;q=0.9"}
 MAX_SECONDS = 45 * 60
 
 _one_at_a_time = threading.Lock()
@@ -51,6 +73,7 @@ class ImportJob(SQLModel, table=True):
     status: str = "queued"  # queued | fetching | reading | saving | done | failed
     message: str = ""
     recipe_id: int | None = None
+    file: str | None = None  # an uploaded file's name in data/imports/ (url then holds its original name)
     created_at: datetime = Field(default_factory=now)
 
 
@@ -63,6 +86,8 @@ def platform(url: str) -> str | None:
         return "youtube"
     if re.search(r"instagram\.com/(reel|reels|p|tv)/", url):
         return "instagram"
+    if re.match(r"https?://[^/\s]+\.[^/\s]+", url):
+        return "web"
     return None
 
 
@@ -77,6 +102,12 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={m[1]}"
     if m := re.search(r"instagram\.com/(?:[\w.]+/)?(reel|reels|p|tv)/([\w-]+)", url):
         return f"https://www.instagram.com/{'reel' if m[1] == 'reels' else m[1]}/{m[2]}/"
+    # Web pages: drop the fragment and tracking parameters (utm_*, fbclid…).
+    url = url.split("#")[0]
+    if "?" in url:
+        base, query = url.split("?", 1)
+        keep = [p for p in query.split("&") if p and not re.match(r"(utm_\w+|fbclid|gclid|mc_\w+|ref|igshid)=", p)]
+        url = base + ("?" + "&".join(keep) if keep else "")
     return url
 
 
@@ -91,7 +122,8 @@ def run(job_id: int) -> None:
             session.commit()
 
         try:
-            recipe = import_video(session, job, step)
+            recipe = import_file(session, job, step) if job.file else \
+                import_page(session, job, step) if platform(job.url) == "web" else import_video(session, job, step)
             job.recipe_id = recipe.id
             step("done", recipe.title)
         except ImportError_ as e:
@@ -99,6 +131,9 @@ def run(job_id: int) -> None:
         except Exception as e:  # noqa: BLE001 — anything else: keep the worker alive, say what broke
             log.exception("import %s failed", job.url)
             step("failed", f"Something went wrong: {e}")
+        finally:
+            if job.file:
+                (UPLOAD_DIR / job.file).unlink(missing_ok=True)
 
 
 def import_video(session: Session, job: ImportJob, step) -> Recipe:
@@ -122,7 +157,207 @@ def import_video(session: Session, job: ImportJob, step) -> Recipe:
         raise ImportError_("I couldn't find a recipe in that video.")
 
     step("saving", "Working out calories")
-    return save_import(session, job, info, data)
+    return save_import(session, job, info, data, kind)
+
+
+def import_page(session: Session, job: ImportJob, step) -> Recipe:
+    if not GEMINI_KEY:
+        raise ImportError_("Importing isn't set up on the server yet (no Gemini key).")
+    step("fetching", "Reading the page")
+    try:
+        r = fetch(job.url)
+    except Blocked:
+        # The site turns the server away (Cloudflare and the like): let Gemini fetch the page itself.
+        step("reading", "Writing the recipe")
+        prompt = PAGE_PROMPT.format(rules=RULES, title="", site="", url=job.url, jsonld="(read the page)",
+                                    text="(read the page at the link above)")
+        data = ask_gemini([{"text": prompt}], "the page", tools=[{"url_context": {}}])
+        if not data.get("is_recipe") or not data.get("ingredients"):
+            raise ImportError_("That site won't let the server read it. Save the page as a PDF (Print → Save as PDF) and import the file.")
+        step("saving", "Working out calories")
+        return save_import(session, job, {"uploader": re.sub(r"^www\.", "", httpx.URL(job.url).host)}, data, "web")
+    if "pdf" in r.headers.get("content-type", "") or r.content[:5] == b"%PDF-":
+        return import_document(session, job, step, r.content, "application/pdf", job.url)
+    page = read_page(r.text, str(r.url))
+
+    step("reading", "Writing the recipe")
+    prompt = PAGE_PROMPT.format(rules=RULES, title=page["title"], site=page["site"], url=job.url,
+                                jsonld=json.dumps(page["recipe"], ensure_ascii=False)[:20000] if page["recipe"] else "(none)",
+                                text=page["text"][:(20000 if page["recipe"] else 60000)] or "(none)")
+    data = ask_gemini([{"text": prompt}], "the page")
+    if not data.get("is_recipe") or not data.get("ingredients"):
+        raise ImportError_("I couldn't find a recipe on that page.")
+
+    step("saving", "Working out calories")
+    info = {"title": page["title"], "uploader": page["author"] or page["site"], "thumbnail": page["image"]}
+    return save_import(session, job, info, data, "web")
+
+
+def import_file(session: Session, job: ImportJob, step) -> Recipe:
+    path = UPLOAD_DIR / job.file
+    if path.suffix[1:] in TEXT_EXTS:
+        return import_text(session, job, step, path)
+    mime = next((t for t, ext in FILE_TYPES.items() if path.suffix == f".{ext}"), "application/pdf")
+    return import_document(session, job, step, path.read_bytes(), mime, None)
+
+
+def import_document(session: Session, job: ImportJob, step, data: bytes, mime: str, url: str | None) -> Recipe:
+    """A PDF or a photo, uploaded or linked to."""
+    if not GEMINI_KEY:
+        raise ImportError_("Importing isn't set up on the server yet (no Gemini key).")
+    if len(data) > FILE_MAX:
+        raise ImportError_("That file is too big to import (40 MB at most).")
+    what = "PDF" if mime == "application/pdf" else "photo"
+    step("reading", f"Reading the {what} and writing the recipe")
+    with httpx.Client(timeout=httpx.Timeout(300, connect=20), headers={"x-goog-api-key": GEMINI_KEY}) as http:
+        if len(data) <= INLINE_MAX:
+            part = {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}}
+        else:
+            with tempfile.NamedTemporaryFile(suffix="." + FILE_TYPES.get(mime, "bin")) as f:
+                f.write(data)
+                f.flush()
+                part = {"file_data": {"file_uri": upload(http, Path(f.name), mime), "mime_type": mime}}
+    name = job.url if url is None else url.rsplit("/", 1)[-1]
+    recipe = ask_gemini([part, {"text": DOC_PROMPT.format(rules=RULES, kind=what, name=name)}], f"the {what}")
+    if not recipe.get("is_recipe") or not recipe.get("ingredients"):
+        raise ImportError_(f"I couldn't find a recipe in that {what}.")
+
+    step("saving", "Working out calories")
+    return save_import(session, job, {"title": Path(name).stem}, recipe, "pdf" if what == "PDF" else "photo")
+
+
+def import_text(session: Session, job: ImportJob, step, path: Path) -> Recipe:
+    """A YAML/JSON/text recipe file. Big exports can hold many recipes; this takes the first one."""
+    if not GEMINI_KEY:
+        raise ImportError_("Importing isn't set up on the server yet (no Gemini key).")
+    text = path.read_bytes().decode("utf-8", errors="replace")[:TEXT_MAX]
+    step("reading", "Reading the file and writing the recipe")
+    prompt = DOC_PROMPT.format(rules=RULES, kind="file", name=job.url) + "\nFile contents:\n" + text
+    data = ask_gemini([{"text": prompt}], "the file")
+    if not data.get("is_recipe") or not data.get("ingredients"):
+        raise ImportError_("I couldn't find a recipe in that file.")
+    step("saving", "Working out calories")
+    return save_import(session, job, {"title": Path(job.url).stem}, data, "file")
+
+
+# --- web pages
+
+class Blocked(Exception):
+    """The site turned the server away."""
+
+
+def fetch(url: str) -> httpx.Response:
+    try:
+        r = httpx.get(url, headers=BROWSER, follow_redirects=True, timeout=30)
+    except httpx.HTTPError as e:
+        raise ImportError_(f"Couldn't open that page ({type(e).__name__}).") from e
+    if r.status_code in (401, 403, 429, 503):
+        raise Blocked()
+    if r.status_code == 404:
+        raise ImportError_("That page doesn't exist (404).")
+    if r.status_code >= 400:
+        raise ImportError_(f"Couldn't open that page ({r.status_code}).")
+    return r
+
+
+def read_page(page: str, url: str) -> dict:
+    """The recipe's schema.org data (if any), title, photo, author and readable text of a page."""
+    from html.parser import HTMLParser
+
+    class Reader(HTMLParser):
+        SKIP = {"script", "style", "noscript", "svg", "template", "iframe", "nav", "footer", "form", "button"}
+        BLOCK = {"p", "div", "li", "br", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article", "ul", "ol", "table"}
+
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.jsonld: list[str] = []
+            self.meta: dict[str, str] = {}
+            self.title = ""
+            self.text: list[str] = []
+            self._skip = 0
+            self._in = None
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "script" and (a.get("type") or "").lower() == "application/ld+json":
+                self._in, self.jsonld = "jsonld", self.jsonld + [""]
+            elif tag == "title":
+                self._in = "title"
+            elif tag == "meta" and (key := a.get("property") or a.get("name")) and a.get("content"):
+                self.meta.setdefault(key.lower(), a["content"])
+            if tag in self.SKIP:
+                self._skip += 1
+            if tag in self.BLOCK:
+                self.text.append("\n")
+
+        def handle_endtag(self, tag):
+            if tag in ("script", "title"):
+                self._in = None
+            if tag in self.SKIP and self._skip:
+                self._skip -= 1
+            if tag in self.BLOCK:
+                self.text.append("\n")
+
+        def handle_data(self, data):
+            if self._in == "jsonld":
+                self.jsonld[-1] += data
+            elif self._in == "title":
+                self.title += data
+            elif not self._skip:
+                self.text.append(data)
+
+    reader = Reader()
+    reader.feed(page)
+    recipe = None
+    for block in reader.jsonld:
+        try:
+            recipe = find_recipe(json.loads(block, strict=False))
+        except json.JSONDecodeError:
+            continue
+        if recipe:
+            break
+    text = re.sub(r"[ \t\r\f\v]+", " ", "".join(reader.text))
+    text = re.sub(r"\s*\n\s*", "\n", text).strip()
+    meta = reader.meta
+    image = (first_url((recipe or {}).get("image")) or meta.get("og:image") or meta.get("twitter:image") or "").strip()
+    return {
+        "recipe": recipe,
+        "title": html.unescape((recipe or {}).get("name") or meta.get("og:title") or reader.title).strip(),
+        "site": meta.get("og:site_name") or re.sub(r"^www\.", "", httpx.URL(url).host),
+        "author": person((recipe or {}).get("author")) or meta.get("author"),
+        "image": httpx.URL(url).join(image).__str__() if image else None,
+        "text": text,
+    }
+
+
+def find_recipe(node) -> dict | None:
+    """The first schema.org Recipe in a JSON-LD blob (it may be nested in an @graph or a list)."""
+    if isinstance(node, list):
+        return next((r for n in node if (r := find_recipe(n))), None)
+    if not isinstance(node, dict):
+        return None
+    kind = node.get("@type")
+    if kind == "Recipe" or (isinstance(kind, list) and "Recipe" in kind):
+        return node
+    return find_recipe(node.get("@graph") or node.get("mainEntity") or [])
+
+
+def first_url(image) -> str | None:
+    if isinstance(image, str):
+        return image
+    if isinstance(image, list):
+        return next((u for i in image if (u := first_url(i))), None)
+    if isinstance(image, dict):
+        return image.get("url") or image.get("contentUrl")
+    return None
+
+
+def person(author) -> str | None:
+    if isinstance(author, list):
+        return person(author[0]) if author else None
+    if isinstance(author, dict):
+        return author.get("name")
+    return author if isinstance(author, str) else None
 
 
 # --- the video's page
@@ -165,6 +400,16 @@ def download(url: str, tmp: str) -> Path:
 
 # --- Gemini
 
+# The parts of the rules every kind of import shares.
+RULES = """- Group ingredients into sections when the recipe has parts ("Marinade", "Sauce", "To serve").
+- Steps: short, clear instructions in order, each with an optional short title.
+- servings: how many portions it makes (a number). total_minutes: the total time if said or clear.
+- category: one of Breakfast, Lunch, Dinner, Side, Snack, Dessert, Drink. cuisine: e.g. Indian, Mexican.
+- tags: pick any that fit from: Easy, Level Up, Quick, Under 1 Hour, I Got Time, Chicken, Beef, Pork,
+  Eggs, Seafood, Vegetarian, Stir Fry, Bake, Braise, Sear, Crispy, Grill, High Protein, Gluten Free,
+  Low Fat, Low Carb, Dairy Free, Meal Prep.
+"""
+
 PROMPT = """You turn cooking videos into recipes for a recipe app.
 
 Watch the video (listen to what's said and read any text on screen) and read the video's
@@ -180,14 +425,7 @@ Rules:
   ingredient a sensible amount for 2 portions, judging from what you see in the video (e.g. "300 g",
   "1 tbsp", "2 cloves"). Set amounts_estimated to true when you did this for any ingredient. Only
   seasoning to taste (salt, pepper) or garnish may be "to taste".
-- Group ingredients into sections when the recipe has parts ("Marinade", "Sauce", "To serve").
-- Steps: short, clear instructions in order, each with an optional short title.
-- servings: how many portions it makes (a number). total_minutes: the total time if said or clear.
-- category: one of Breakfast, Lunch, Dinner, Side, Snack, Dessert, Drink. cuisine: e.g. Indian, Mexican.
-- tags: pick any that fit from: Easy, Level Up, Quick, Under 1 Hour, I Got Time, Chicken, Beef, Pork,
-  Eggs, Seafood, Vegetarian, Stir Fry, Bake, Braise, Sear, Crispy, Grill, High Protein, Gluten Free,
-  Low Fat, Low Carb, Dairy Free, Meal Prep.
-- stated_nutrition: ONLY numbers the creator actually gives (in the description, on screen or said).
+{rules}- stated_nutrition: ONLY numbers the creator actually gives (in the description, on screen or said).
   Never estimate them yourself. Say whether they are per serving or for the whole recipe.
 - If the video isn't a recipe (a vlog, a review…), set is_recipe to false.
 - Write in English.
@@ -197,6 +435,56 @@ Creator: {creator}
 
 Description:
 {description}
+"""
+
+PAGE_PROMPT = """You turn recipe web pages into recipes for a recipe app.
+
+Below is a page from a recipe site: the recipe data the site publishes for search engines
+(schema.org JSON-LD) when it has one, and the page's text. Write the recipe on the page.
+
+Rules:
+- Take the recipe from the structured data and the recipe card. Ignore the story before it, ads,
+  comments, and other recipes the page links to.
+- Keep each ingredient's amount as the page writes it ("200 g", "2 tbsp", "3 cloves", "1 can",
+  "to taste"). When it gives both US and metric amounts ("1 cup (240 ml)"), use the metric one.
+- When an amount is missing, give a sensible one for the recipe's servings and set
+  amounts_estimated to true. Only seasoning to taste or garnish may be "to taste". If servings
+  aren't given, judge them from the amounts.
+{rules}- stated_nutrition: ONLY numbers the page gives (the structured data's nutrition, or a nutrition
+  box). Never estimate them yourself. Say whether they are per serving or for the whole recipe.
+- If the page has no recipe on it (an article, a shop, a list of links…), set is_recipe to false.
+- Write in English.
+
+Page: {url}
+Title: {title}
+Site: {site}
+
+Structured data:
+{jsonld}
+
+Page text:
+{text}
+"""
+
+DOC_PROMPT = """You turn recipe documents into recipes for a recipe app.
+
+The attached {kind} is a recipe: a printed or saved recipe, a cookbook page, a recipe card, a
+handwritten note, a screenshot, or a recipe exported from another app (YAML, JSON, text). Read it and write the recipe in it. If it holds several
+recipes, write the first complete one.
+
+Rules:
+- Keep each ingredient's amount as written ("200 g", "2 tbsp", "3 cloves", "1 can", "to taste").
+  When it gives both US and metric amounts, use the metric one.
+- When an amount is missing, give a sensible one for the recipe's servings and set
+  amounts_estimated to true. Only seasoning to taste or garnish may be "to taste". If servings
+  aren't given, judge them from the amounts.
+- A recipe split across pages or columns is still one recipe; follow it to the end.
+{rules}- stated_nutrition: ONLY numbers the {kind} gives. Never estimate them yourself. Say whether they are
+  per serving or for the whole recipe.
+- If there's no recipe in it, set is_recipe to false.
+- Write in English.
+
+File name: {name}
 """
 
 SCHEMA = {
@@ -249,7 +537,7 @@ SCHEMA = {
 
 
 def gemini_recipe(info: dict, kind: str, url: str, media: Path | None) -> dict:
-    prompt = PROMPT.format(title=info.get("title") or "", creator=info.get("uploader") or info.get("channel") or "",
+    prompt = PROMPT.format(rules=RULES, title=info.get("title") or "", creator=info.get("uploader") or info.get("channel") or "",
                            description=(info.get("description") or "(none)")[:6000])
     with httpx.Client(timeout=httpx.Timeout(300, connect=20), headers={"x-goog-api-key": GEMINI_KEY}) as http:
         if kind == "youtube":
@@ -257,13 +545,19 @@ def gemini_recipe(info: dict, kind: str, url: str, media: Path | None) -> dict:
         elif media.stat().st_size <= INLINE_MAX:
             video = {"inline_data": {"mime_type": "video/mp4", "data": base64.b64encode(media.read_bytes()).decode()}}
         else:
-            video = {"file_data": {"file_uri": upload(http, media), "mime_type": "video/mp4"}}
-        body = {
-            "contents": [{"role": "user", "parts": [video, {"text": prompt}]}],
-            "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA, "temperature": 0.2,
-                                 # a long video at full detail would use a lot of the free quota
-                                 "mediaResolution": "MEDIA_RESOLUTION_LOW"},
-        }
+            video = {"file_data": {"file_uri": upload(http, media, "video/mp4"), "mime_type": "video/mp4"}}
+    return ask_gemini([video, {"text": prompt}], "the video",
+                      # a long video at full detail would use a lot of the free quota
+                      mediaResolution="MEDIA_RESOLUTION_LOW")
+
+
+def ask_gemini(parts: list[dict], what: str, tools: list | None = None, **config) -> dict:
+    """Ask for the recipe in SCHEMA's shape; falls back to the lighter model when rate-limited."""
+    body = {
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA, "temperature": 0.2} | config,
+    } | ({"tools": tools} if tools else {})
+    with httpx.Client(timeout=httpx.Timeout(300, connect=20), headers={"x-goog-api-key": GEMINI_KEY}) as http:
         last = None
         for model in dict.fromkeys([GEMINI_MODEL, GEMINI_FALLBACK]):
             for attempt in range(3):
@@ -277,22 +571,22 @@ def gemini_recipe(info: dict, kind: str, url: str, media: Path | None) -> dict:
                         break  # quota for this model: try the fallback
                     continue
                 break
-        detail = ""
-        try:
-            detail = last.json()["error"]["message"]
-        except Exception:  # noqa: BLE001
-            detail = last.text[:200] if last is not None else ""
-        if last is not None and last.status_code == 429:
-            raise ImportError_("The free Gemini quota is used up for now. Try again later.")
-        raise ImportError_(f"Gemini couldn't read the video ({detail[:160]}).")
+    detail = ""
+    try:
+        detail = last.json()["error"]["message"]
+    except Exception:  # noqa: BLE001
+        detail = last.text[:200] if last is not None else ""
+    if last is not None and last.status_code == 429:
+        raise ImportError_("The free Gemini quota is used up for now. Try again later.")
+    raise ImportError_(f"Gemini couldn't read {what} ({detail[:160]}).")
 
 
-def upload(http: httpx.Client, path: Path) -> str:
+def upload(http: httpx.Client, path: Path, mime: str) -> str:
     """Files API: resumable upload, then wait until the file is ready."""
     size = path.stat().st_size
     start = http.post(f"{GEMINI}/upload/v1beta/files", json={"file": {"display_name": path.name}}, headers={
         "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": str(size), "X-Goog-Upload-Header-Content-Type": "video/mp4"})
+        "X-Goog-Upload-Header-Content-Length": str(size), "X-Goog-Upload-Header-Content-Type": mime})
     start.raise_for_status()
     done = http.post(start.headers["x-goog-upload-url"], content=path.read_bytes(), headers={
         "Content-Length": str(size), "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize"})
@@ -302,10 +596,10 @@ def upload(http: httpx.Client, path: Path) -> str:
         if f.get("state") == "ACTIVE":
             return f["uri"]
         if f.get("state") == "FAILED":
-            raise ImportError_("Gemini couldn't process that video file.")
+            raise ImportError_("Gemini couldn't process that file.")
         time.sleep(2)
         f = http.get(f"{GEMINI}/v1beta/{f['name']}").json()
-    raise ImportError_("Gemini took too long to process the video.")
+    raise ImportError_("Gemini took too long to process the file.")
 
 
 def parse(resp: dict) -> dict:
@@ -319,14 +613,16 @@ def parse(resp: dict) -> dict:
 
 # --- saving
 
-def save_import(session: Session, job: ImportJob, info: dict, data: dict) -> Recipe:
-    kind = platform(job.url)
+def save_import(session: Session, job: ImportJob, info: dict, data: dict, kind: str) -> Recipe:
+    """kind: youtube | instagram | web | pdf | photo | file (the recipe's source)."""
+    video = kind in ("youtube", "instagram")
+    where = "the video" if video else "the page" if kind == "web" else f"the {kind if kind != 'pdf' else 'PDF'}"
     stated = data.get("stated_nutrition") or {}
     source_nutrition = None
     if any(stated.get(k) for k in ("calories", "protein", "carbohydrates", "fat")):
         source_nutrition = {k: stated.get(k) for k in ("calories", "protein", "carbohydrates", "fat") if stated.get(k) is not None}
         source_nutrition |= {"per": stated.get("per") or "serving", "from": "creator"}
-    # Amounts the creator never gave: Gemini estimates them for 2 servings (see PROMPT); where it
+    # Amounts the source never gave: Gemini estimates them (for 2 servings in a video, see PROMPT); where it
     # still left one blank, its weight guess stands in, so every ingredient counts.
     servings = data.get("servings") or 2
     estimated = bool(data.get("amounts_estimated")) or not data.get("servings")
@@ -338,11 +634,11 @@ def save_import(session: Session, job: ImportJob, info: dict, data: dict) -> Rec
         title=(data.get("title") or info.get("title") or "Imported recipe")[:120],
         description=data.get("description") or "",
         image_url=keep_thumbnail(info),
-        video_url=job.url,
-        source_url=job.url,
+        video_url=job.url if video else None,
+        source_url=None if job.file else job.url,
         servings=servings,
-        notes="Amounts estimated for 2 servings: the video doesn't give them all." if estimated and servings == 2
-              else "Some amounts are estimates: the video doesn't give them all." if estimated else "",
+        notes=f"Amounts estimated for 2 servings: {where} doesn't give them all." if estimated and servings == 2 and video
+              else f"Some amounts are estimates: {where} doesn't give them all." if estimated else "",
         yield_text=data.get("yield_text") or None,
         total_minutes=data.get("total_minutes") or None,
         cuisine=data.get("cuisine") or None,
@@ -364,13 +660,15 @@ def save_import(session: Session, job: ImportJob, info: dict, data: dict) -> Rec
 
 
 def keep_thumbnail(info: dict) -> str | None:
-    """Save the video's cover photo (Instagram's links expire) and use it as the recipe's photo."""
+    """Save the video's cover photo (Instagram's links expire) or the page's photo as the recipe's photo."""
     url = info.get("thumbnail")
     if not url:
         return None
     try:
-        r = httpx.get(url, timeout=20, follow_redirects=True)
+        r = httpx.get(url, timeout=20, follow_redirects=True, headers=BROWSER | {"Accept": "image/*"})
         r.raise_for_status()
+        if not r.headers.get("content-type", "").startswith("image/"):
+            return None
         ext = {"image/png": "png", "image/webp": "webp"}.get(r.headers.get("content-type", "").split(";")[0], "jpg")
         IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         name = f"{os.urandom(12).hex()}.{ext}"

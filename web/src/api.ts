@@ -269,6 +269,14 @@ export const api = {
   applyTemplate: (id: number) => request<GroceryItem[]>('POST', `/grocery/templates/${id}/apply`),
   importStatus: () => request<{ ready: boolean; instagram_cookies: boolean }>('GET', '/import/status'),
   startImport: (url: string) => request<ImportJob>('POST', '/import', { url }),
+  /** A PDF, a photo of a recipe, or a recipe file (YAML, JSON, text). */
+  importFile: async (file: File): Promise<ImportJob> => {
+    const res = await fetch(`/api/import/file?name=${encodeURIComponent(file.name)}`,
+      { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file })
+    if (res.status === 401) throw new SignedOut()
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.json() as Promise<ImportJob>
+  },
   importJob: (id: number) => request<ImportJob>('GET', `/import/${id}`),
   appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>

@@ -104,9 +104,23 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun makeVariation(recipeId: Int, body: RecipeIn): Int =
         (post<JsonObject>("/recipes/$recipeId/variation", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)["id"].toString()).toInt()
 
-    // --- importing from videos
+    // --- importing from videos, recipe pages and files
     suspend fun importStatus(): ImportStatus = get("/import/status")
     suspend fun startImport(url: String): ImportJob = post("/import", buildJsonObject { put("url", url) })
+    /** A PDF, a photo of a recipe, or a recipe file (YAML, JSON, text). */
+    suspend fun importFile(bytes: ByteArray, type: String, name: String): ImportJob = withContext(Dispatchers.IO) {
+        val url = "$base/import/file".toHttpUrl().newBuilder().addQueryParameter("name", name).build()
+        val request = Request.Builder().url(url).apply {
+            token()?.let { header("Authorization", "Bearer $it") }
+            post(bytes.toRequestBody(type.toMediaType()))
+        }.build()
+        http.newCall(request).execute().use { res ->
+            if (res.code == 401) { onSignedOut(); throw SignedOutException() }
+            val text = res.body.string()
+            if (!res.isSuccessful) throw ApiException(res.code, detail(text) ?: "Upload failed (${res.code})")
+            json.decodeFromString(text)
+        }
+    }
     suspend fun importJob(id: Int): ImportJob = get("/import/$id")
 
     // --- grocery templates

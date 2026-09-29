@@ -44,6 +44,8 @@ class CauldronApp : Application() {
 
     /** A link shared to Cauldron from another app (YouTube, Instagram), waiting to be imported. */
     val sharedLink = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    /** A file shared to Cauldron (a PDF, a photo of a recipe, a YAML/JSON recipe), waiting to be imported. */
+    val sharedFile = kotlinx.coroutines.flow.MutableStateFlow<android.net.Uri?>(null)
 
     override fun onCreate() {
         super.onCreate()

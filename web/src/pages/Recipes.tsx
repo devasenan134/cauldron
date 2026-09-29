@@ -183,22 +183,26 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-const STEPS: [string, string][] = [['queued', 'Waiting its turn'], ['fetching', "Reading the video's page"],
-  ['reading', 'Watching the video and writing the recipe'], ['saving', 'Working out calories']]
+// The server says what it's doing in job.message; these are for when it hasn't yet.
+const STEPS: [string, string][] = [['queued', 'Waiting its turn'], ['fetching', 'Opening the link'],
+  ['reading', 'Writing the recipe'], ['saving', 'Working out calories']]
+const FILES = '.pdf,image/*,.yaml,.yml,.json,.txt,.md'
 
-/** Import from a YouTube video, a Short or an Instagram Reel; opens the recipe when it's ready. */
+/** Import from a recipe page, a video (YouTube, Shorts, Reels) or a file (PDF, photo, YAML/JSON/text);
+ *  opens the recipe when it's ready. */
 function ImportDialog({ initial, onClose }: { initial: string; onClose: () => void }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [url, setUrl] = useState(initial)
   const [job, setJob] = useState<ImportJob | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [over, setOver] = useState(false)
   const running = job != null && job.status !== 'done' && job.status !== 'failed'
 
-  const start = async (link: string) => {
+  const start = async (from: string | File) => {
     setError(null)
     try {
-      let j = await api.startImport(link)
+      let j = typeof from === 'string' ? await api.startImport(from) : await api.importFile(from)
       setJob(j)
       while (j.status !== 'done' && j.status !== 'failed') {
         await new Promise((r) => setTimeout(r, 1500))
@@ -210,24 +214,32 @@ function ImportDialog({ initial, onClose }: { initial: string; onClose: () => vo
         qc.invalidateQueries({ queryKey: ['catalog'] })
         navigate(`/recipes/${j.recipe_id}`)
       } else setError(j.message)
-    } catch (e) { setError(String(e).replace(/^Error: POST \/import: \d+ /, '')); setJob(null) }
+    } catch (e) { setError(String(e).replace(/^Error: (POST \/import: )?\d+ /, '').replace(/^\{"detail":"(.*)"\}$/, '$1')); setJob(null) }
   }
   const step = Math.max(0, STEPS.findIndex(([s]) => s === job?.status))
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => !running && onClose()}>
-      <div className="rise w-full max-w-lg rounded-3xl bg-cream p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className={`rise w-full max-w-lg rounded-3xl bg-cream p-6 shadow-2xl ${over ? 'ring-4 ring-ember-bright/60' : ''}`} onClick={(e) => e.stopPropagation()}
+        onDragOver={(e) => { if (!running) { e.preventDefault(); setOver(true) } }} onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f && !running) start(f) }}>
         <h2 className="font-display text-3xl font-extrabold">Import a recipe</h2>
-        <p className="mt-1 text-sm text-stone-500">From a YouTube video, a Short or an Instagram Reel. Cauldron watches it, reads the description for amounts and macros, and writes the recipe.</p>
+        <p className="mt-1 text-sm text-stone-500">From a recipe website, a YouTube video, a Short or an Instagram Reel, or a file: a PDF, a photo of a recipe, or a YAML/JSON recipe. Cauldron reads it, keeps the amounts and macros it gives, and writes the recipe.</p>
         {!running ? (
-          <form className="mt-5 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (url.trim()) start(url.trim()) }}>
-            <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link"
-              className="min-w-0 flex-1 rounded-full bg-paper px-5 py-3 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
-            <Button variant="accent" type="submit" disabled={!url.trim()}>Import</Button>
-          </form>
+          <>
+            <form className="mt-5 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (url.trim()) start(url.trim()) }}>
+              <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link"
+                className="min-w-0 flex-1 rounded-full bg-paper px-5 py-3 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
+              <Button variant="accent" type="submit" disabled={!url.trim()}>Import</Button>
+            </form>
+            <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 px-4 py-4 text-sm font-semibold text-stone-500 hover:border-stone-400 hover:text-ink">
+              📄 Choose a PDF, photo or recipe file <span className="hidden font-normal sm:inline">(or drop it here)</span>
+              <input type="file" accept={FILES} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) start(f); e.target.value = '' }} />
+            </label>
+          </>
         ) : (
           <div className="mt-5 rounded-2xl bg-paper p-5 ring-1 ring-stone-200">
-            <p className="flex items-center gap-3 font-semibold"><span className="h-4 w-4 animate-spin rounded-full border-2 border-ember-bright border-t-transparent" />{STEPS[step][1]}…</p>
+            <p className="flex items-center gap-3 font-semibold"><span className="h-4 w-4 animate-spin rounded-full border-2 border-ember-bright border-t-transparent" />{job?.message || STEPS[step][1]}…</p>
             <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-stone-200">
               <div className="h-full rounded-full bg-ember-bright transition-[width] duration-500" style={{ width: `${((step + 1) / (STEPS.length + 1)) * 100}%` }} />
             </div>

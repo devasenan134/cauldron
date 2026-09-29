@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         sharedLink(intent)?.let { (application as CauldronApp).sharedLink.value = it }
+        sharedFile(intent)?.let { (application as CauldronApp).sharedFile.value = it }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as CauldronApp
         sharedLink(intent)?.let { app.sharedLink.value = it }
+        sharedFile(intent)?.let { app.sharedFile.value = it }
         setContent {
             val state by app.session.state.collectAsState()
             val theme = (state as? Session.State.SignedIn)?.me?.theme ?: "system"
@@ -148,10 +150,16 @@ private class Layer(val page: Page, val key: Long, shown: Boolean) {
     val offset = Animatable(if (shown) 0f else 1f)
 }
 
-/** The link in a "Share → Cauldron" from YouTube or Instagram. */
+/** The link in a "Share → Cauldron" from YouTube, Instagram or a browser. */
 private fun sharedLink(intent: Intent?): String? =
     intent?.takeIf { it.action == Intent.ACTION_SEND }?.getStringExtra(Intent.EXTRA_TEXT)
         ?.let { Regex("https?://\\S+").find(it)?.value }
+
+/** The file in a "Share → Cauldron" (a PDF, a photo, a recipe file), when no link came with it. */
+@Suppress("DEPRECATION")
+private fun sharedFile(intent: Intent?): android.net.Uri? =
+    intent?.takeIf { it.action == Intent.ACTION_SEND && sharedLink(it) == null }
+        ?.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
 
 private object Tabs {
     const val HOME = "home"; const val RECIPES = "recipes"; const val PLAN = "plan"; const val FRIDGE = "fridge"; const val PROFILE = "profile"
@@ -207,6 +215,7 @@ private fun AppRoot() {
     val openRecipe: (Int) -> Unit = { open(Page.Recipe(it)) }
     var importing by remember { mutableStateOf(false) }
     val shared by app.sharedLink.collectAsState()
+    val sharedFile by app.sharedFile.collectAsState()
 
     // Back from a tab other than Home: it shrinks away over Home (like Android's own back), then Home.
     val tabBack = remember { Animatable(0f) }
@@ -323,9 +332,10 @@ private fun AppRoot() {
             }
         }
     }
-    if (importing || shared != null) ImportSheet(
+    if (importing || shared != null || sharedFile != null) ImportSheet(
         initial = shared,
-        onDismiss = { importing = false; app.sharedLink.value = null },
+        file = sharedFile,
+        onDismiss = { importing = false; app.sharedLink.value = null; app.sharedFile.value = null },
         openRecipe = { id -> goTab(Tabs.RECIPES); open(Page.Recipe(id)) },
     )
 }
