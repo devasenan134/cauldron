@@ -154,6 +154,8 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
     fields = body.model_dump(exclude={"ingredients", "steps"})
     fields["yield_grams"] = body.yield_grams if body.yield_grams and body.yield_grams > 0 else None
     fields["title"] = fields["title"].strip()
+    # Without a serving count there's no kcal per serving: a recipe with none makes one.
+    fields["servings"] = body.servings if body.servings and body.servings > 0 else 1
     fields["tags"] = [t.strip() for t in body.tags if t.strip()]
     for k, v in fields.items():
         setattr(recipe, k, v)

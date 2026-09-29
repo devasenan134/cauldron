@@ -88,6 +88,8 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.github.devasenan134.cauldron.data.Food
 import io.github.devasenan134.cauldron.data.Ingredient
+import io.github.devasenan134.cauldron.data.MEALS
+import io.github.devasenan134.cauldron.data.MEAL_LABEL
 import io.github.devasenan134.cauldron.data.RecipeDetail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -428,6 +430,7 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
     val scope = rememberCoroutineScope()
     val tick = rememberTick()
     var day by remember { mutableStateOf<String?>(today()) }
+    var meal by remember { mutableStateOf(mealNow()) }
     var cook by remember(r.id) { mutableStateOf(r.servings ?: 1.0) }
     var eat by remember { mutableStateOf(1.0) }
     var busy by remember { mutableStateOf(false) }
@@ -439,6 +442,9 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
             Text(r.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp))
             Text("When", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
             DayChips(day, { tick(); day = it }, wrap = true, days = 10)
+            if (day != null) Row(Modifier.padding(start = 20.dp, top = 12.dp)) {
+                Segmented(MEALS.map { it to MEAL_LABEL.getValue(it) }, meal) { tick(); meal = it }
+            }
             Row(Modifier.padding(horizontal = 20.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StepperCard("Cook", "portions", cook, { cook = it; if (eat > it) eat = it }, Modifier.weight(1f))
                 StepperCard("Eat now", "portions", eat, { eat = it; if (cook < it) cook = it }, Modifier.weight(1f), step = 0.5, min = 0.5)
@@ -461,6 +467,7 @@ private fun AddToPlanSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String
                             app.api.addEntry(buildJsonObject {
                                 put("day", day?.let { JsonPrimitive(it) } ?: JsonNull)
                                 put("recipe_id", r.id)
+                                put("meal", meal)
                                 put("servings", eat)
                                 // Cooking more than you eat makes a batch; the rest goes in the fridge.
                                 put("cook_portions", if (extra > 0) JsonPrimitive(cook) else JsonNull)

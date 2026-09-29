@@ -116,7 +116,16 @@ export type PlanEntry = {
   grams_left: number | null
   /** Preps this meal needs that nothing planned covers (the grocery list buys their ingredients). */
   short: { prep_id: number; title: string; grams: number }[]
+  meal: Meal
+  /** Logged: eaten, or eaten out (what was planned went to the fridge). */
+  status: 'eaten' | 'out' | null
+  out_kcal: number | null
+  /** What the log counts toward today's calories. */
+  eaten_kcal: number | null
 }
+
+export const MEALS = ['breakfast', 'lunch', 'dinner'] as const
+export type Meal = (typeof MEALS)[number]
 
 export type Plan = { days: Record<string, PlanEntry[]>; queue: PlanEntry[] }
 
@@ -136,7 +145,7 @@ export type AppRelease = { version: string; notes: string; size: number }
 
 export type Profile = {
   cooked: number; recipes_cooked: number; mine: number; favorites: number; streak: number
-  days: Record<string, number>; cuisines: [string, number][]; categories: [string, number][]
+  days: Record<string, number>; out_days: string[]; cuisines: [string, number][]; categories: [string, number][]
 }
 export type Cooked = { day: string; entry_id: number; servings: number; batch: number | null; recipe: RecipeSummary }
 export type FolderSummary = { id: number; name: string; count: number; covers: string[] }
@@ -291,6 +300,9 @@ export const api = {
     cook_portions?: number | null
     made_grams?: number | null
     position?: number
+    meal?: Meal
+    status?: 'out'
+    out_kcal?: number | null
   }) => request<PlanEntry>('POST', '/plan', e),
   updateEntry: (
     id: number,
@@ -302,6 +314,9 @@ export const api = {
       cook_portions?: number | null
       discarded?: number
       made_grams?: number | null
+      meal?: Meal
+      status?: 'eaten' | 'out' | null
+      out_kcal?: number | null
     },
   ) => request<PlanEntry>('PATCH', `/plan/${id}`, patch),
   batches: () => request<PlanEntry[]>('GET', '/batches'),

@@ -18,7 +18,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, type Plan, type PlanEntry, type RecipeSummary } from '../api'
+import { api, MEALS, type Meal, type Plan, type PlanEntry, type RecipeSummary } from '../api'
+import { LogButtons, loggable, MEAL_EMOJI, MEAL_LABEL } from '../components/MealLog'
 import { addDays, dayLabel, today, weekStart } from '../dates'
 import { refreshPlan } from '../plan'
 import { Button, Chip, PageHeader, Shimmer, Stepper } from '../components/ui'
@@ -26,6 +27,11 @@ import { kcal, num, plural, thumb } from '../format'
 import { useDebounced } from '../useDebounced'
 
 const QUEUE = 'queue'
+// A day's panels are lists of their own: "2026-09-29|lunch".
+const slot = (day: string, meal: Meal) => `${day}|${meal}`
+const parseSlot = (col: string): { day: string | null; meal?: Meal } =>
+  col === QUEUE ? { day: null } : { day: col.split('|')[0], meal: col.split('|')[1] as Meal }
+const ofMeal = (entries: PlanEntry[], meal: Meal) => entries.filter((e) => e.meal === meal)
 // Drop where the pointer is; fall back to overlap when it's between columns.
 const collision: CollisionDetection = (args) => {
   const hits = pointerWithin(args)
@@ -60,8 +66,8 @@ export default function Planner() {
   const refresh = () => refreshPlan(qc)
   const add = useMutation({ mutationFn: api.addEntry, onSettled: refresh })
   const move = useMutation({
-    mutationFn: ({ id, day, position }: { id: number; day: string | null; position: number }) =>
-      api.updateEntry(id, { day, position }),
+    mutationFn: ({ id, day, position, meal }: { id: number; day: string | null; position: number; meal?: Meal }) =>
+      api.updateEntry(id, { day, position, meal }),
     onSettled: refresh,
   })
   const grocery = useMutation({
@@ -72,7 +78,10 @@ export default function Planner() {
     },
   })
 
-  const columns = (p: Plan): Record<string, PlanEntry[]> => ({ ...p.days, [QUEUE]: p.queue })
+  const columns = (p: Plan): Record<string, PlanEntry[]> => ({
+    ...Object.fromEntries(Object.entries(p.days).flatMap(([d, l]) => MEALS.map((m) => [slot(d, m), ofMeal(l, m)]))),
+    [QUEUE]: p.queue,
+  })
 
   /** Which column and index a drop target means. */
   const locate = (overId: string, p: Plan): { col: string; index: number } | null => {
@@ -99,29 +108,29 @@ export default function Planner() {
     if (!over || !p) return
     const target = locate(String(over.id), p)
     if (!target) return
-    const day = target.col === QUEUE ? null : target.col
+    const { day, meal } = parseSlot(target.col)
     const drag = active.data.current as Drag
 
     if (drag.kind === 'recipe') {
-      add.mutate({ day, recipe_id: drag.recipe.id, servings: 1, position: target.index })
+      add.mutate({ day, meal, recipe_id: drag.recipe.id, servings: 1, position: target.index })
       return
     }
     if (drag.kind === 'batch') {
-      add.mutate({ day, leftover_of: drag.batch.id, servings: 1, position: target.index })
+      add.mutate({ day, meal, leftover_of: drag.batch.id, servings: 1, position: target.index })
       return
     }
     // Move the entry locally first so the drop feels instant, then save.
     const entry = drag.entry
     const cols = columns(p)
-    const from = entry.day ?? QUEUE
+    const from = entry.day ? slot(entry.day, entry.meal) : QUEUE
     const next: Record<string, PlanEntry[]> = Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, [...v]]))
-    next[from] = next[from].filter((e) => e.id !== entry.id)
-    next[target.col].splice(target.index, 0, { ...entry, day })
+    if (next[from]) next[from] = next[from].filter((e) => e.id !== entry.id)
+    next[target.col].splice(target.index, 0, { ...entry, day, meal: meal ?? entry.meal })
     qc.setQueryData<Plan>(planKey, {
-      days: Object.fromEntries(Object.keys(p.days).map((d) => [d, next[d]])),
+      days: Object.fromEntries(Object.keys(p.days).map((d) => [d, MEALS.flatMap((m) => next[slot(d, m)])])),
       queue: next[QUEUE],
     })
-    move.mutate({ id: entry.id, day, position: target.index })
+    move.mutate({ id: entry.id, day, position: target.index, meal })
   }
 
   const days = plan.data ? Object.keys(plan.data.days) : []
@@ -206,7 +215,8 @@ export default function Planner() {
   )
 }
 
-const dayTotal = (entries: PlanEntry[]) => entries.reduce((s, e) => s + (e.kcal ?? 0), 0)
+// Planned calories; a meal you ate out instead counts what you logged for it.
+const dayTotal = (entries: PlanEntry[]) => entries.reduce((s, e) => s + ((e.status === 'out' ? e.out_kcal : e.kcal) ?? 0), 0)
 
 function Column({ id, title, subtitle, entries, total, highlight, horizontal, wide }: {
   id: string
@@ -218,9 +228,10 @@ function Column({ id, title, subtitle, entries, total, highlight, horizontal, wi
   horizontal?: boolean
   wide?: boolean
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${id}` })
+  const queue = id === QUEUE
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${id}`, disabled: !queue })
   return (
-    <div ref={setNodeRef}
+    <div ref={queue ? setNodeRef : undefined}
       className={`rounded-3xl p-2.5 transition ${isOver ? 'bg-ember-soft ring-2 ring-ember-bright' : 'bg-paper'} ${highlight && !isOver ? 'ring-2 ring-ember-bright' : ''}`}>
       <div className="mb-2 flex items-baseline justify-between gap-1 px-1.5">
         <span className="whitespace-nowrap">
@@ -229,13 +240,40 @@ function Column({ id, title, subtitle, entries, total, highlight, horizontal, wi
         </span>
         {total ? <span className="whitespace-nowrap font-display text-sm font-bold tabular-nums text-ember">{Math.round(total)}</span> : null}
       </div>
+      {queue ? (
+        <SortableContext items={entries.map((e) => `e:${e.id}`)} strategy={verticalListSortingStrategy}>
+          <div className={horizontal ? 'flex min-h-14 flex-wrap gap-2' : 'min-h-28 space-y-2'}>
+            {entries.map((e) => <EntryCard key={e.id} entry={e} compact={horizontal} />)}
+            {entries.length === 0 && <div className="grid min-h-14 place-items-center rounded-2xl border-2 border-dashed border-stone-200 px-2 text-center text-xs text-stone-400">Drop recipes here</div>}
+            <AddNote day={null} />
+          </div>
+        </SortableContext>
+      ) : (
+        <div className={wide ? 'space-y-3' : 'space-y-2'}>
+          {MEALS.map((m) => <MealPanel key={m} day={id} meal={m} entries={ofMeal(entries, m)} wide={wide} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Breakfast, lunch or dinner on one day: a drop target of its own. */
+function MealPanel({ day, meal, entries, wide }: { day: string; meal: Meal; entries: PlanEntry[]; wide?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${slot(day, meal)}` })
+  const total = dayTotal(entries)
+  return (
+    <div ref={setNodeRef} className={`rounded-2xl p-1.5 transition ${isOver ? 'bg-ember-soft ring-2 ring-ember-bright' : 'bg-cream/60'}`}>
+      <div className="mb-1 flex items-center justify-between px-1 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+        <span>{MEAL_EMOJI[meal]} {MEAL_LABEL[meal]}</span>
+        {total ? <span className="tabular-nums">{Math.round(total)}</span> : null}
+      </div>
       <SortableContext items={entries.map((e) => `e:${e.id}`)} strategy={verticalListSortingStrategy}>
-        <div className={horizontal ? 'flex min-h-14 flex-wrap gap-2' : wide ? 'grid min-h-40 gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'min-h-28 space-y-2'}>
-          {entries.map((e) => <EntryCard key={e.id} entry={e} compact={horizontal} />)}
-          {entries.length === 0 && <div className="grid min-h-20 place-items-center rounded-2xl border-2 border-dashed border-stone-200 px-2 text-center text-xs text-stone-400">Drop recipes here</div>}
-          <AddNote day={id === QUEUE ? null : id} />
+        <div className={wide ? 'grid min-h-12 gap-2 sm:grid-cols-2 xl:grid-cols-3' : 'min-h-12 space-y-2'}>
+          {entries.map((e) => <EntryCard key={e.id} entry={e} />)}
+          {entries.length === 0 && <div className="grid min-h-10 place-items-center rounded-xl border border-dashed border-stone-200 text-[11px] text-stone-400">Drop here</div>}
         </div>
       </SortableContext>
+      <AddNote day={day} meal={meal} />
     </div>
   )
 }
@@ -273,7 +311,13 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
     optimistic((e) => ({ ...e, cook_portions: c, portions_left: c == null ? null : (e.portions_left ?? c - e.servings) + (c - (e.cook_portions ?? c)) }))
     update.mutate({ cook_portions: c })
   }
-  const isBatch = entry.cook_portions != null
+  const out = entry.status === 'out'
+  const isBatch = entry.cook_portions != null && !out
+  const logRow = loggable(entry) && (
+    <div className="mt-2 flex flex-wrap items-center gap-1" {...{ onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }}>
+      <LogButtons entry={entry} />
+    </div>
+  )
   const stop = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }
   const shortfall = entry.short.length > 0 && (
     <p className="mt-1.5 rounded-xl bg-pink-soft px-2 py-1 text-[11px] font-semibold text-pink-deep" {...stop}
@@ -318,6 +362,17 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
 
   // A note ("Dinner at Priya's"): text only. Click to edit; drag to move like a meal.
   if (entry.recipe_id == null && entry.leftover_of == null) {
+    if (out) {
+      return (
+        <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
+          className={`group relative cursor-grab touch-manipulation rounded-2xl bg-danger/10 p-2.5 ring-1 ring-danger/30 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}>
+          <div className="text-sm font-semibold text-danger">🍽 {entry.title}</div>
+          {logRow}
+          <button {...stop} onClick={() => remove.mutate()} title="Remove"
+            className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+        </div>
+      )
+    }
     const edit = () => {
       const t = prompt('Note', entry.title)
       if (t == null) return
@@ -329,6 +384,7 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
       <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
         className={`group relative cursor-grab touch-manipulation rounded-2xl bg-yellow-soft p-2.5 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
         <button {...stop} onClick={edit} className="block w-full text-left text-sm text-ink">📝 {entry.title}</button>
+        {logRow}
         <button {...stop} onClick={() => remove.mutate()} title="Remove note"
           className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
       </div>
@@ -338,11 +394,12 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
       className={`group relative cursor-grab touch-manipulation rounded-2xl p-2 active:cursor-grabbing ${
-        entry.leftover_of ? 'bg-sky-soft' : isBatch ? 'bg-amber-soft' : 'bg-cream'} ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
+        out ? 'bg-danger/10 ring-1 ring-danger/30' : entry.leftover_of ? 'bg-sky-soft' : isBatch ? 'bg-amber-soft' : 'bg-cream'} ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
       <div className="flex gap-2">
         {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
         <div className="min-w-0 flex-1">
-          {entry.leftover_of && <div className="text-[10px] font-bold uppercase tracking-wider text-sky-deep">Leftovers</div>}
+          {out && <div className="text-[10px] font-bold uppercase tracking-wider text-danger">Ate out · in the fridge</div>}
+          {entry.leftover_of && !out && <div className="text-[10px] font-bold uppercase tracking-wider text-sky-deep">Leftovers</div>}
           {isBatch && <div className="text-[10px] font-bold uppercase tracking-wider text-amber-deep">Batch cook</div>}
           {entry.recipe_id ? (
             <Link to={`/recipes/${entry.recipe_id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-ember" {...stop}>{entry.title}</Link>
@@ -365,12 +422,13 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
           {shortfall}
         </div>
       ) : (
-        entry.recipe_id != null && !entry.leftover_of && (
+        !out && entry.recipe_id != null && !entry.leftover_of && (
           <button {...stop} onClick={() => setCook(entry.servings + 3)}
             className="mt-1 hidden text-xs font-semibold text-amber-deep hover:underline group-hover:block">+ batch cook</button>
         )
       )}
       {!isBatch && shortfall}
+      {logRow}
       <button {...stop} onClick={() => remove.mutate()} title={isBatch ? 'Remove (and its leftovers)' : 'Remove'}
         className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
     </div>
@@ -443,9 +501,9 @@ function DraggableRecipe({ recipe }: { recipe: RecipeSummary }) {
   )
 }
 
-function AddNote({ day }: { day: string | null }) {
+function AddNote({ day, meal }: { day: string | null; meal?: Meal }) {
   const qc = useQueryClient()
-  const add = useMutation({ mutationFn: (title: string) => api.addEntry({ day, title }), onSettled: () => refreshPlan(qc) })
+  const add = useMutation({ mutationFn: (title: string) => api.addEntry({ day, meal, title }), onSettled: () => refreshPlan(qc) })
   return (
     <button onClick={() => { const t = prompt('Add a note', ''); if (t?.trim()) add.mutate(t.trim()) }}
       className="w-full rounded-xl px-2 py-1 text-left text-xs font-semibold text-stone-400 hover:bg-sand hover:text-ink">＋ Note</button>

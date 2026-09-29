@@ -127,7 +127,7 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
             }
         }
         // The cooking calendar
-        item { profile?.let { CookCalendar(it.days, Modifier.padding(top = 20.dp)) } }
+        item { profile?.let { CookCalendar(it.days, it.outDays.toSet(), Modifier.padding(top = 20.dp)) } }
         // Your kitchen lately
         item {
             val p = profile
@@ -225,9 +225,9 @@ private fun Stat(n: Int?, label: String, dot: Color) = Column {
     }
 }
 
-/** Cook Well's grid: one square per day for the last weeks, darker the more you cooked. */
+/** Cook Well's grid: one square per day for the last weeks, darker the more you cooked; red when you ate out. */
 @Composable
-private fun CookCalendar(days: Map<String, Int>, modifier: Modifier = Modifier, weeks: Int = 17) {
+private fun CookCalendar(days: Map<String, Int>, out: Set<String>, modifier: Modifier = Modifier, weeks: Int = 17) {
     val todayDate = LocalDate.now()
     val start = todayDate.with(DayOfWeek.MONDAY).minusWeeks((weeks - 1).toLong())
     Column(modifier.fillMaxWidth().border(1.dp, C.line, RoundedCornerShape(24.dp)).padding(16.dp)) {
@@ -247,6 +247,7 @@ private fun CookCalendar(days: Map<String, Int>, modifier: Modifier = Modifier, 
                             val n = days[date.toString()] ?: 0
                             val color = when {
                                 date.isAfter(todayDate) -> Color.Transparent
+                                date.toString() in out -> C.danger
                                 n == 0 -> C.surfaceAlt
                                 n == 1 -> C.go.copy(alpha = 0.45f)
                                 n == 2 -> C.go.copy(alpha = 0.7f)
@@ -261,6 +262,14 @@ private fun CookCalendar(days: Map<String, Int>, modifier: Modifier = Modifier, 
         Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             listOf(0, weeks / 2, weeks - 1).forEach { w ->
                 Text(start.plusWeeks(w.toLong()).month.getDisplayName(TextStyle.SHORT, Locale.getDefault()), fontSize = 10.sp, color = C.faint)
+            }
+        }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            listOf("Cooked" to C.go, "Ate out" to C.danger).forEach { (label, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
+                    Text("  $label", fontSize = 11.sp, color = C.muted)
+                }
             }
         }
     }

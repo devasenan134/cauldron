@@ -260,8 +260,16 @@ data class PlanEntry(
     val gramsLeft: Double? = null,
     /** preps this meal needs that nothing planned covers (the grocery list buys their ingredients) */
     val short: List<Shortfall> = emptyList(),
+    /** breakfast, lunch or dinner: the planner's panels */
+    val meal: String = "dinner",
+    /** logged: "eaten", or "out" (ate out instead; what was planned went to the fridge); null = not yet */
+    val status: String? = null,
+    val outKcal: Double? = null,
+    /** what the log counts toward the day's calories */
+    val eatenKcal: Double? = null,
 ) {
-    val isBatch get() = cookPortions != null
+    val isOut get() = status == "out"
+    val isBatch get() = cookPortions != null && !isOut
     val isLeftover get() = leftoverOf != null
     /** A note on the plan: text, no recipe. */
     val isNote get() = recipeId == null && leftoverOf == null
@@ -296,6 +304,8 @@ data class Profile(
     val streak: Int = 0,
     /** "YYYY-MM-DD" -> meals cooked that day (last 20 weeks) */
     val days: Map<String, Int> = emptyMap(),
+    /** days you logged eating out (red on the calendar) */
+    val outDays: List<String> = emptyList(),
     val cuisines: List<List<kotlinx.serialization.json.JsonElement>> = emptyList(),
     val categories: List<List<kotlinx.serialization.json.JsonElement>> = emptyList(),
 )
@@ -317,3 +327,7 @@ data class TemplateItem(val name: String, val amount: String = "", val aisle: St
 
 @Serializable
 data class GroceryTemplate(val id: Int, val name: String, val items: List<TemplateItem>)
+
+val MEALS = listOf("breakfast", "lunch", "dinner")
+val MEAL_LABEL = mapOf("breakfast" to "Breakfast", "lunch" to "Lunch", "dinner" to "Dinner")
+val MEAL_EMOJI = mapOf("breakfast" to "🍳", "lunch" to "🥪", "dinner" to "🍲")

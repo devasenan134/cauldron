@@ -112,6 +112,11 @@ def unit_weight(ing: Ingredient, food: Food | None, unit: str) -> float | None:
             u = p["unit"].lower()
             if u.startswith(unit.rstrip("s")) and "cup" not in u and p["grams"] <= 80:
                 return p["grams"]
+    if unit.rstrip("s") == "slice":
+        # A slice of something weighed whole ("4-5 slices" of cucumber), not the whole thing.
+        whole = next((g for key, g in EACH.items() if re.search(r"\b" + re.escape(key), name)), None)
+        if whole is not None and whole > 80:
+            return 8
     for key, grams in EACH.items():
         # Match at the start of a word: "can" must not match "American cheese".
         if re.search(r"\b" + re.escape(key), name):
@@ -182,7 +187,7 @@ def resolve_grams(ing: Ingredient, food: Food | None, grams_per_part: float | No
 TYPICAL = [
     ("water", 0), ("ice", 0), ("anchov", 5), ("caper", 3),
     ("salami", 30), ("soppressata", 30), ("mortadella", 30), ("prosciutto", 25), ("pepperoni", 25), ("ham", 40),
-    ("capicola", 30), ("parmigiano", 8), ("reggiano", 8), ("pecorino", 8), ("grana", 8), ("salt", 1), ("pepper flake", 0.5), ("black pepper", 0.3), ("pepper", 0.3),
+    ("capicola", 30), ("parmigiano", 8), ("reggiano", 8), ("pecorino", 8), ("grana", 8), ("salt", 1), ("powder", 1), ("pepper flake", 0.5), ("black pepper", 0.3), ("pepper", 0.3),
     ("tortilla", "item"), ("bun", "item"), ("roll", "item"), ("pita", "item"), ("naan", "item"), ("bread", "item"),
     ("sour cream", 30), ("yogurt", 30), ("crema", 20), ("cream", 15), ("parmesan", 8), ("feta", 20), ("queso", 20),
     ("cheese", 20), ("butter", 7), ("mayo", 10), ("lettuce", 20), ("cabbage", 25), ("slaw", 30), ("pickle", 15),

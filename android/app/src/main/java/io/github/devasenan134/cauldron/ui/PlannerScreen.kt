@@ -72,6 +72,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.github.devasenan134.cauldron.CauldronApp
+import io.github.devasenan134.cauldron.data.MEALS
+import io.github.devasenan134.cauldron.data.MEAL_EMOJI
+import io.github.devasenan134.cauldron.data.MEAL_LABEL
 import io.github.devasenan134.cauldron.data.Plan
 import io.github.devasenan134.cauldron.data.PlanEntry
 import io.github.devasenan134.cauldron.data.RecipeSummary
@@ -97,6 +100,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
     val (load, retry) = cached(plan, week) { store.loadPlan(week) }
     var refreshing by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<String?>(null) }
+    var addingMeal by remember { mutableStateOf("dinner") }
     var addingOpen by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf<PlanEntry?>(null) }
     var groceryDialog by remember { mutableStateOf(false) }
@@ -114,7 +118,10 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
         try { block() } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
         store.refreshPlans()
     }
-    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, openRecipe = openRecipe, onEditNote = { noting = NoteTarget(it.day, it) })
+    val log = rememberMealLog { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, openRecipe = openRecipe, onEditNote = { noting = NoteTarget(it.day, it.meal, it) }, log = log)
+    val onAdd = { day: String?, meal: String -> adding = day; addingMeal = meal; addingOpen = true }
+    val onNote = { day: String?, meal: String -> noting = NoteTarget(day, meal, null) }
     val weekKcal = plan?.days?.values?.flatten()?.sumOf { it.kcal ?: 0.0 } ?: 0.0
 
     Box(Modifier.fillMaxSize()) {
@@ -132,11 +139,11 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
                     if (view == "week") {
                         WeekList(p, days, actions,
                             openDay = { i -> view = "day"; scope.launch { pager.scrollToPage(i) } },
-                            onAdd = { day -> adding = day; addingOpen = true }, onNote = { day -> noting = NoteTarget(day, null) })
+                            onAdd = onAdd, onNote = onNote)
                     } else HorizontalPager(pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
                         val day = if (page == QUEUE_PAGE) null else days[page - 1]
                         val entries = if (day == null) p.queue else p.days[day].orEmpty()
-                        DayPage(day, entries, actions, onAdd = { adding = day; addingOpen = true }, onNote = { noting = NoteTarget(day, null) })
+                        DayPage(day, entries, actions, onAdd = { meal -> onAdd(day, meal) }, onNote = { meal -> onNote(day, meal) })
                     }
                 }
             }
@@ -148,23 +155,24 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
         NoteDialog(t.entry?.title ?: "", isNew = t.entry == null, onDismiss = { noting = null }, onDelete = t.entry?.let { e -> { noting = null; actions.remove(e) } }) { text ->
             noting = null
             val e = t.entry
-            if (e == null) act { app.api.addEntry(buildJsonObject { put("day", t.day?.let { JsonPrimitive(it) } ?: JsonNull); put("title", text) }) }
+            if (e == null) act { app.api.addEntry(buildJsonObject { put("day", t.day?.let { JsonPrimitive(it) } ?: JsonNull); put("meal", t.meal); put("title", text) }) }
             else {
                 app.store.editEntry(e.id) { it.copy(title = text) }
                 act { app.api.updateEntry(e.id, buildJsonObject { put("title", text) }) }
             }
         }
     }
-    if (addingOpen) AddSheet(adding, onDismiss = { addingOpen = false }) { body ->
+    log.Dialogs()
+    if (addingOpen) AddSheet(adding, addingMeal, onDismiss = { addingOpen = false }) { body ->
         addingOpen = false
         act { app.api.addEntry(body) }
     }
     moving?.let { entry ->
-        MoveSheet(entry, week, onDismiss = { moving = null }) { day ->
+        MoveSheet(entry, week, onDismiss = { moving = null }) { day, meal ->
             moving = null
             // Show it in its new place right away.
-            store.editPlan(week) { it.moveEntry(entry.id, day) }
-            act { app.api.updateEntry(entry.id, buildJsonObject { put("day", day?.let { JsonPrimitive(it) } ?: JsonNull) }) }
+            store.editPlan(week) { it.moveEntry(entry.id, day, meal) }
+            act { app.api.updateEntry(entry.id, buildJsonObject { put("day", day?.let { JsonPrimitive(it) } ?: JsonNull); put("meal", meal) }) }
         }
     }
     if (groceryDialog) GroceryDialog(week, onDismiss = { groceryDialog = false }) { includeQueue ->
@@ -182,10 +190,10 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
 
 private fun Plan.mapEntries(f: (List<PlanEntry>) -> List<PlanEntry>) = Plan(days.mapValues { f(it.value) }, f(queue))
 
-private fun Plan.moveEntry(id: Int, day: String?): Plan {
+private fun Plan.moveEntry(id: Int, day: String?, meal: String): Plan {
     val entry = (days.values.flatten() + queue).firstOrNull { it.id == id } ?: return this
     val without = mapEntries { l -> l.filter { it.id != id } }
-    val moved = entry.copy(day = day)
+    val moved = entry.copy(day = day, meal = meal)
     return if (day == null) Plan(without.days, without.queue + moved)
     else Plan(without.days.mapValues { (d, l) -> if (d == day) l + moved else l }, without.queue)
 }
@@ -194,6 +202,7 @@ private fun Plan.moveEntry(id: Int, day: String?): Plan {
 private class PlanActions(
     val app: CauldronApp, val week: String, val act: (suspend () -> Unit) -> Unit,
     val onMove: (PlanEntry) -> Unit, val openRecipe: (Int) -> Unit, val onEditNote: (PlanEntry) -> Unit,
+    val log: MealLog,
 ) {
     private fun send(e: PlanEntry, body: JsonObject) = act { app.api.updateEntry(e.id, body) }
 
@@ -262,8 +271,8 @@ private fun DayPill(top: String, big: String, selected: Boolean, today: Boolean,
 }
 
 @Composable
-private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions, onAdd: () -> Unit, onNote: () -> Unit) {
-    val total = entries.sumOf { it.kcal ?: 0.0 }
+private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions, onAdd: (String) -> Unit, onNote: (String) -> Unit) {
+    val total = dayKcal(entries)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(bottom = 4.dp)) {
@@ -277,16 +286,50 @@ private fun DayPage(day: String?, entries: List<PlanEntry>, actions: PlanActions
                 }
             }
         }
-        items(entries, key = { it.id }) { e ->
-            val i = entries.indexOf(e)
-            if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
-            else MealCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.animateItem())
-        }
-        item(key = "add") {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.weight(1f)) { AddMealButton(onAdd) }
-                AddNoteButton(onNote)
+        // A day has breakfast, lunch and dinner panels; the queue is one list.
+        val groups = if (day == null) listOf("" to entries) else MEALS.map { m -> m to entries.filter { it.meal == m } }
+        groups.forEach { (meal, list) ->
+            if (meal.isNotEmpty()) item(key = "h:$meal") {
+                MealHeader(meal, dayKcal(list), Modifier.animateItem().padding(top = 4.dp), onAdd = { onAdd(meal) }, onNote = { onNote(meal) })
             }
+            items(list, key = { it.id }) { e ->
+                val i = list.indexOf(e)
+                if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < list.lastIndex, index = i, modifier = Modifier.animateItem())
+                else MealCard(e, actions, canUp = i > 0, canDown = i < list.lastIndex, index = i, modifier = Modifier.animateItem())
+            }
+            if (meal.isNotEmpty() && list.isEmpty()) item(key = "e:$meal") {
+                Row(Modifier.animateItem().fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(1.dp, C.line, RoundedCornerShape(18.dp))
+                    .pressable({ onAdd(meal) }, 0.98f).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Nothing planned", color = C.faint, modifier = Modifier.weight(1f))
+                    if (day != null && day <= today()) LogPill("Ate out", C.danger, Color.Transparent, border = true) { actions.log.outEmpty(day, meal) }
+                }
+            }
+        }
+        if (day == null) item(key = "add") {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.weight(1f)) { AddMealButton { onAdd("dinner") } }
+                AddNoteButton { onNote("dinner") }
+            }
+        }
+    }
+}
+
+/** Planned calories; a meal you ate out instead counts what you logged for it. */
+private fun dayKcal(entries: List<PlanEntry>) = entries.sumOf { (if (it.isOut) it.outKcal else it.kcal) ?: 0.0 }
+
+/** "🍳 Breakfast · 420" with buttons to add a meal or a note to it. */
+@Composable
+private fun MealHeader(meal: String, total: Double, modifier: Modifier = Modifier, compact: Boolean = false, onAdd: () -> Unit, onNote: () -> Unit) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("${MEAL_EMOJI[meal]} ${MEAL_LABEL[meal]?.uppercase()}", color = C.muted, fontSize = if (compact) 11.sp else 12.sp,
+            fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+        if (total > 0) Text("  ${total.roundToInt()}", color = C.goText, fontSize = if (compact) 11.sp else 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Box(Modifier.size(32.dp).clip(CircleShape).pressable(onNote, 0.85f), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.EditNote, "Add a note to ${MEAL_LABEL[meal]}", tint = C.muted, modifier = Modifier.size(20.dp))
+        }
+        Box(Modifier.size(32.dp).clip(CircleShape).pressable(onAdd, 0.85f), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Add, "Add to ${MEAL_LABEL[meal]}", tint = C.muted, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -308,18 +351,18 @@ fun Segmented(options: List<Pair<String, String>>, selected: String, onPick: (St
 
 /** The whole week at a glance: each day with its meals as compact rows. */
 @Composable
-private fun WeekList(p: Plan, days: List<String>, actions: PlanActions, openDay: (Int) -> Unit, onAdd: (String?) -> Unit, onNote: (String?) -> Unit) {
+private fun WeekList(p: Plan, days: List<String>, actions: PlanActions, openDay: (Int) -> Unit, onAdd: (String?, String) -> Unit, onNote: (String?, String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = screenPadding(top = 4.dp)) {
-        if (p.queue.isNotEmpty()) item(key = "queue") { WeekDay(null, p.queue, actions, { openDay(QUEUE_PAGE) }, { onAdd(null) }, { onNote(null) }) }
+        if (p.queue.isNotEmpty()) item(key = "queue") { WeekDay(null, p.queue, actions, { openDay(QUEUE_PAGE) }, { m -> onAdd(null, m) }, { m -> onNote(null, m) }) }
         days.forEachIndexed { i, d ->
-            item(key = d) { WeekDay(d, p.days[d].orEmpty(), actions, { openDay(i + 1) }, { onAdd(d) }, { onNote(d) }) }
+            item(key = d) { WeekDay(d, p.days[d].orEmpty(), actions, { openDay(i + 1) }, { m -> onAdd(d, m) }, { m -> onNote(d, m) }) }
         }
     }
 }
 
 @Composable
-private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions, open: () -> Unit, add: () -> Unit, note: () -> Unit) {
-    val total = entries.sumOf { it.kcal ?: 0.0 }
+private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions, open: () -> Unit, add: (String) -> Unit, note: (String) -> Unit) {
+    val total = dayKcal(entries)
     val isToday = day == today()
     Column(Modifier.padding(top = 14.dp)) {
         Row(Modifier.fillMaxWidth().pressable(open, 0.98f).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -327,17 +370,22 @@ private fun WeekDay(day: String?, entries: List<PlanEntry>, actions: PlanActions
             Text(if (day == null) "  no day yet" else "  ${monthDay(day)}", color = C.muted)
             Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(1.dp).background(C.line))
             if (total > 0) Text("%,d".format(total.roundToInt()), fontFamily = Display, fontWeight = FontWeight.Bold, color = C.goText)
-            Box(Modifier.padding(start = 4.dp).size(32.dp).clip(CircleShape).pressable(note, 0.85f), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.EditNote, "Add a note", tint = C.muted, modifier = Modifier.size(20.dp))
-            }
-            Box(Modifier.size(32.dp).clip(CircleShape).pressable(add, 0.85f), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Add, "Add a meal", tint = C.muted, modifier = Modifier.size(20.dp))
+            if (day == null) {
+                Box(Modifier.padding(start = 4.dp).size(32.dp).clip(CircleShape).pressable({ note("dinner") }, 0.85f), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.EditNote, "Add a note", tint = C.muted, modifier = Modifier.size(20.dp))
+                }
+                Box(Modifier.size(32.dp).clip(CircleShape).pressable({ add("dinner") }, 0.85f), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Add, "Add a meal", tint = C.muted, modifier = Modifier.size(20.dp))
+                }
             }
         }
-        if (entries.isEmpty()) Text("Nothing planned", color = C.faint, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 4.dp))
-        entries.forEachIndexed { i, e ->
-            if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i, modifier = Modifier.padding(vertical = 4.dp), compact = true)
-            else CompactMeal(e, actions, canUp = i > 0, canDown = i < entries.lastIndex, index = i)
+        val groups = if (day == null) listOf("" to entries) else MEALS.map { m -> m to entries.filter { it.meal == m } }
+        groups.forEach { (meal, list) ->
+            if (meal.isNotEmpty()) MealHeader(meal, dayKcal(list), Modifier.padding(top = 2.dp), compact = true, onAdd = { add(meal) }, onNote = { note(meal) })
+            list.forEachIndexed { i, e ->
+                if (e.isNote) NoteCard(e, actions, canUp = i > 0, canDown = i < list.lastIndex, index = i, modifier = Modifier.padding(vertical = 4.dp), compact = true)
+                else CompactMeal(e, actions, canUp = i > 0, canDown = i < list.lastIndex, index = i)
+            }
         }
     }
 }
@@ -353,11 +401,13 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
             Text(e.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
+                    e.isOut -> Pill("Ate out" + (e.outKcal?.let { " · ${it.roundToInt()}" } ?: ""), color = Color.White, background = C.danger)
+                    e.status == "eaten" -> Pill("✓ Eaten", color = C.onGo, background = C.go)
                     e.isPrep -> Pill("🫙 Prep · ${(e.madeGrams ?: 0.0).roundToInt()} g", color = C.goText, background = C.goSoft)
                     e.isLeftover -> Pill("Leftovers", color = C.blueFg, background = C.blueBg)
                     e.isBatch -> Pill("Batch · ${num(e.cookPortions ?: 0.0)}", color = C.purpleFg, background = C.purpleBg)
                 }
-                if (!e.isPrep) Text((if (e.isLeftover || e.isBatch) "  " else "") + listOfNotNull(
+                if (!e.isPrep) Text((if (e.isLeftover || e.isBatch || e.status != null) "  " else "") + listOfNotNull(
                     if (e.servings != 1.0) plural(e.servings, "serving") else null, e.kcal?.let { kcal(it) }).joinToString(" · "),
                     color = C.muted, style = MaterialTheme.typography.bodySmall)
             }
@@ -367,6 +417,7 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${e.title}", tint = C.muted) }
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                if (e.loggable()) LogMenuItems(e, a) { menu = false }
                 DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
                 if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                 if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
@@ -382,8 +433,20 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
     }
 }
 
+/** Log it from a card's menu (the week view has no room for the buttons). */
+@Composable
+private fun LogMenuItems(e: PlanEntry, a: PlanActions, close: () -> Unit) {
+    when (e.status) {
+        null -> {
+            if (!e.isNote) DropdownMenuItem(text = { Text("✓ Ate it") }, onClick = { close(); a.log.eaten(e) })
+            DropdownMenuItem(text = { Text("Ate out", color = C.danger) }, onClick = { close(); a.log.out(e) })
+        }
+        else -> DropdownMenuItem(text = { Text("Undo the log") }, onClick = { close(); a.log.undo(e) })
+    }
+}
+
 /** Where a new note goes, or the note being edited. */
-private data class NoteTarget(val day: String?, val entry: PlanEntry?)
+private data class NoteTarget(val day: String?, val meal: String, val entry: PlanEntry?)
 
 @Composable
 private fun AddNoteButton(onClick: () -> Unit) {
@@ -402,16 +465,21 @@ private fun AddNoteButton(onClick: () -> Unit) {
 private fun NoteCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier, compact: Boolean = false) {
     var menu by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(if (compact) 14.dp else 20.dp)).background(C.yellowBg)
-            .pressable({ a.onEditNote(e) }, 0.98f).padding(start = 14.dp, top = if (compact) 8.dp else 12.dp, bottom = if (compact) 8.dp else 12.dp, end = 4.dp),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(if (compact) 14.dp else 20.dp)).background(if (e.isOut) C.danger.copy(alpha = 0.12f) else C.yellowBg)
+            .pressable({ if (e.isOut) a.log.out(e) else a.onEditNote(e) }, 0.98f).padding(start = 14.dp, top = if (compact) 8.dp else 12.dp, bottom = if (compact) 8.dp else 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.EditNote, null, tint = C.yellowFg)
-        Text(e.title, color = C.ink, modifier = Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.bodyLarge)
+        if (e.isOut) Text("🍽") else Icon(Icons.Outlined.EditNote, null, tint = C.yellowFg)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(e.title + (if (e.isOut) e.outKcal?.let { " · ${it.roundToInt()} kcal" } ?: "" else ""), color = if (e.isOut) C.danger else C.ink,
+                style = MaterialTheme.typography.bodyLarge, fontWeight = if (e.isOut) FontWeight.SemiBold else FontWeight.Normal)
+            if (!compact && e.loggable() && !e.isOut) LogButtons(e, a.log, Modifier.padding(top = 8.dp))
+        }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for note", tint = C.muted) }
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; a.onEditNote(e) })
+                if (e.loggable()) LogMenuItems(e, a) { menu = false }
+                if (!e.isOut) DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; a.onEditNote(e) })
                 DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
                 if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                 if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
@@ -506,15 +574,15 @@ private fun PrepCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
 private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier) {
     if (e.isPrep) return PrepCard(e, a, canUp, canDown, index, modifier)
     var menu by remember { mutableStateOf(false) }
-    val accent = when { e.isLeftover -> C.blueFg; e.isBatch -> C.purpleFg; else -> C.ink }
-    Surface(color = C.surface, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
+    val accent = when { e.isOut -> C.danger; e.isLeftover -> C.blueFg; e.isBatch -> C.purpleFg; else -> C.ink }
+    Surface(color = if (e.isOut) C.danger.copy(alpha = 0.10f) else C.surface, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(thumb(e.imageUrl, 200), null, contentScale = ContentScale.Crop,
                     modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(C.line)
                         .then(if (e.recipeId != null) Modifier.pressable({ a.openRecipe(e.recipeId) }) else Modifier))
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    if (e.isLeftover || e.isBatch) Text(if (e.isLeftover) "LEFTOVERS" else "BATCH COOK", color = accent, fontSize = 11.sp,
+                    if (e.isOut || e.isLeftover || e.isBatch) Text(if (e.isOut) "ATE OUT · IN THE FRIDGE" else if (e.isLeftover) "LEFTOVERS" else "BATCH COOK", color = accent, fontSize = 11.sp,
                         fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
                     Text(e.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = if (e.recipeId != null) Modifier.clickable { a.openRecipe(e.recipeId) } else Modifier)
@@ -526,7 +594,7 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
                         DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
                         if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                         if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
-                        if (!e.isLeftover && e.recipeId != null) {
+                        if (!e.isLeftover && !e.isOut && e.recipeId != null) {
                             if (e.isBatch) DropdownMenuItem(text = { Text("Not a batch") }, onClick = { menu = false; a.setCook(e, null) })
                             else DropdownMenuItem(text = { Text("Batch cook") }, onClick = { menu = false; a.setCook(e, e.servings + 3) })
                         }
@@ -549,13 +617,14 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
                 )
             }
             Shortfall(e)
+            if (e.loggable()) LogButtons(e, a.log, Modifier.padding(top = 10.dp))
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) -> Unit) {
+private fun AddSheet(day: String?, initialMeal: String, onDismiss: () -> Unit, onAdd: (JsonObject) -> Unit) {
     val app = app()
     var tab by remember { mutableStateOf(0) }
     var q by remember { mutableStateOf("") }
@@ -564,9 +633,11 @@ private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) ->
     LaunchedEffect(q) { delay(250); recipes = runCatching { app.api.recipes(q.trim()) }.getOrNull() }
     LaunchedEffect(Unit) { runCatching { app.store.loadBatches() } }
     val dayJson = day?.let { JsonPrimitive(it) } ?: JsonNull
+    var meal by remember { mutableStateOf(initialMeal) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
         Text("Add to ${if (day == null) "the queue" else dayChipLabel(day)}", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
+        if (day != null) Row(Modifier.padding(start = 20.dp, top = 10.dp)) { Segmented(MEALS.map { it to MEAL_LABEL.getValue(it) }, meal) { meal = it } }
         Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Chip("Recipes", tab == 0) { tab = 0 }
             Chip("From the fridge" + (batches?.size?.takeIf { it > 0 }?.let { " · $it" } ?: ""), tab == 1) { tab = 1 }
@@ -576,7 +647,7 @@ private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) ->
             LazyColumn(Modifier.height(480.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
                 items(recipes.orEmpty(), key = { it.id }) { r ->
                     PickRow(r.imageUrl, r.title, r.kcalPerServing?.let { "${it.roundToInt()} kcal" }) {
-                        onAdd(buildJsonObject { put("day", dayJson); put("recipe_id", r.id); put("servings", 1.0) })
+                        onAdd(buildJsonObject { put("day", dayJson); put("meal", meal); put("recipe_id", r.id); put("servings", 1.0) })
                     }
                 }
             }
@@ -587,7 +658,7 @@ private fun AddSheet(day: String?, onDismiss: () -> Unit, onAdd: (JsonObject) ->
                 }
                 items(batches.orEmpty(), key = { it.id }) { b ->
                     PickRow(b.imageUrl, b.title, "${num(b.portionsLeft ?: 0.0)} left", sub = b.day?.let { "cooked ${monthDay(it)}" } ?: "not scheduled") {
-                        onAdd(buildJsonObject { put("day", dayJson); put("leftover_of", b.id); put("servings", 1.0) })
+                        onAdd(buildJsonObject { put("day", dayJson); put("meal", meal); put("leftover_of", b.id); put("servings", 1.0) })
                     }
                 }
             }
@@ -610,12 +681,14 @@ private fun PickRow(image: String?, title: String, trailing: String?, sub: Strin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MoveSheet(entry: PlanEntry, week: String, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
+private fun MoveSheet(entry: PlanEntry, week: String, onDismiss: () -> Unit, onPick: (String?, String) -> Unit) {
+    var meal by remember { mutableStateOf(entry.meal) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
         Text("Move to…", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
         Text(entry.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp))
+        Row(Modifier.padding(start = 20.dp, top = 12.dp)) { Segmented(MEALS.map { it to MEAL_LABEL.getValue(it) }, meal) { meal = it } }
         Spacer(Modifier.height(16.dp))
-        DayChips(entry.day, onPick, from = week, days = 14, wrap = true)
+        DayChips(entry.day, { onPick(it, meal) }, from = week, days = 14, wrap = true)
         Spacer(Modifier.height(40.dp))
     }
 }

@@ -50,6 +50,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import io.github.devasenan134.cauldron.data.MEALS
+import io.github.devasenan134.cauldron.data.MEAL_EMOJI
+import io.github.devasenan134.cauldron.data.MEAL_LABEL
 import io.github.devasenan134.cauldron.data.PlanEntry
 import io.github.devasenan134.cauldron.data.Session
 import java.time.LocalTime
@@ -67,6 +70,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
     val goal = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me?.kcalGoal ?: 2200
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
     var editingGoal by remember { mutableStateOf(false) }
+    val log = rememberMealLog()
 
     LaunchedEffect(LocalRefresh.current) {
         runCatching { store.loadPlan(week) }
@@ -78,9 +82,13 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
     val nextPlan = store.plans.collectAsState().value[nextWeek]
     LaunchedEffect(nextWeek) { if (nextWeek != week) runCatching { store.loadPlan(nextWeek) } }
 
-    val todays = plan?.days?.get(today()).orEmpty().filter { !it.isNote }
+    val todayAll = plan?.days?.get(today()).orEmpty()
+    val todays = todayAll.filter { !it.isNote }
     val tomorrows = (if (nextWeek == week) plan else nextPlan)?.days?.get(tomorrow).orEmpty().filter { !it.isNote }
-    val eaten = todays.sumOf { it.kcal ?: 0.0 }
+    // Calories count what you've logged; the rest of today's plan shows as still to come.
+    val eaten = todayAll.sumOf { it.eatenKcal ?: 0.0 }
+    val planned = todays.filter { it.status == null }.sumOf { it.kcal ?: 0.0 }
+    val upNext = todays.filter { it.status == null && !it.isPrep }
     val oldBatches = batches.orEmpty().filter { b -> b.day != null && b.day <= today() }
     val firstName = me?.name?.substringBefore(' ')?.ifBlank { null }
 
@@ -91,14 +99,14 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
             Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                 when {
                     plan == null -> Shimmer(Modifier.fillMaxWidth().height(260.dp), RoundedCornerShape(28.dp))
-                    todays.isNotEmpty() -> Hero(todays.first(), "TODAY", more = todays.size - 1) { todays.first().recipeId?.let(openRecipe) }
+                    upNext.isNotEmpty() -> Hero(upNext.first(), MEAL_LABEL[upNext.first().meal]?.uppercase() ?: "TODAY", more = upNext.size - 1) { upNext.first().recipeId?.let(openRecipe) }
                     tomorrows.isNotEmpty() -> Hero(tomorrows.first(), "TOMORROW", more = tomorrows.size - 1) { tomorrows.first().recipeId?.let(openRecipe) }
                     else -> EmptyHero { openTab("recipes") }
                 }
             }
         }
 
-        item { CaloriesCard(eaten, goal, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { editingGoal = true } }
+        item { CaloriesCard(eaten, planned, goal, Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) { editingGoal = true } }
         item {
             // The grocery list lives here now (Profile took its tab).
             val toBuy = grocery.count { !it.checked }
@@ -117,12 +125,10 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
             }
         }
 
-        if (todays.size > 1) item {
+        if (plan != null) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionLabel("Today's meals")
-                Surface(color = C.surface, shape = RoundedCornerShape(20.dp)) {
-                    Column(Modifier.padding(vertical = 6.dp)) { todays.forEach { MealRow(it) { it.recipeId?.let(openRecipe) } } }
-                }
+                SectionLabel("Log today") { TextButton(onClick = { openTab("plan") }) { Text("Plan", color = C.goText) } }
+                MEALS.forEach { m -> LogPanel(m, todayAll.filter { it.meal == m && !it.isPrep }, log, openRecipe) }
             }
         }
 
@@ -143,7 +149,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
             }
         }
 
-        if (todays.isNotEmpty() && tomorrows.isNotEmpty()) item {
+        if (tomorrows.isNotEmpty()) item {
             Column(Modifier.padding(horizontal = 20.dp)) {
                 SectionLabel("Tomorrow")
                 Surface(color = C.surface, shape = RoundedCornerShape(20.dp)) {
@@ -153,6 +159,7 @@ fun HomeScreen(openRecipe: (Int) -> Unit, openTab: (String) -> Unit, openGrocery
         }
     }
 
+    log.Dialogs()
     if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { kcal -> editingGoal = false; app.scope.launch { runCatching { app.setKcalGoal(kcal) } } }
 }
 
@@ -198,7 +205,7 @@ private fun EmptyHero(onFind: () -> Unit) {
 }
 
 @Composable
-private fun CaloriesCard(eaten: Double, goal: Int, modifier: Modifier, onEditGoal: () -> Unit) {
+private fun CaloriesCard(eaten: Double, planned: Double, goal: Int, modifier: Modifier, onEditGoal: () -> Unit) {
     val shown by animateIntAsState(eaten.roundToInt(), tween(700), label = "kcal")
     val fraction by animateFloatAsState((eaten / goal).toFloat().coerceIn(0f, 1f), tween(900), label = "bar")
     val over = eaten > goal
@@ -209,15 +216,63 @@ private fun CaloriesCard(eaten: Double, goal: Int, modifier: Modifier, onEditGoa
                 Text("%,d".format(shown), style = MaterialTheme.typography.displaySmall, color = if (over) C.danger else C.ink)
                 Text("  / ${"%,d".format(goal)} kcal", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
             }
+            val soon by animateFloatAsState(((eaten + planned) / goal).toFloat().coerceIn(0f, 1f), tween(900), label = "planned")
             Box(Modifier.padding(top = 12.dp).fillMaxWidth().height(12.dp).clip(RoundedCornerShape(50)).background(C.line)) {
+                // Still to come: the meals planned today that you haven't logged yet.
+                if (!over && planned > 0) Box(Modifier.fillMaxHeight().fillMaxWidth(soon).clip(RoundedCornerShape(50)).background(C.go.copy(alpha = 0.3f)))
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).clip(RoundedCornerShape(50))
                     .background(if (over) C.danger else C.go))
             }
             val left = goal - eaten
             Text(
-                if (left >= 0) "${"%,d".format(left.roundToInt())} kcal left in your plan" else "${"%,d".format((-left).roundToInt())} kcal over your goal",
+                (if (left >= 0) "${"%,d".format(left.roundToInt())} kcal left" else "${"%,d".format((-left).roundToInt())} kcal over your goal") +
+                    (if (planned > 0) " · ${"%,d".format(planned.roundToInt())} still planned" else ""),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
             )
+        }
+    }
+}
+
+/** One meal of today: what's planned, with buttons to log it (or log eating out when nothing is). */
+@Composable
+private fun LogPanel(meal: String, entries: List<PlanEntry>, log: MealLog, openRecipe: (Int) -> Unit) {
+    Surface(color = C.surface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${MEAL_EMOJI[meal]} ${MEAL_LABEL[meal]?.uppercase()}", color = C.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp, modifier = Modifier.weight(1f))
+                val logged = entries.sumOf { it.eatenKcal ?: 0.0 }
+                if (logged > 0) Text("${logged.roundToInt()} kcal logged", color = C.goText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            entries.forEach { e ->
+                val out = e.isOut
+                Column(Modifier.fillMaxWidth().then(if (out) Modifier.background(C.danger.copy(alpha = 0.08f)) else Modifier)
+                    .pressable({ e.recipeId?.let(openRecipe) }, 0.98f).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (e.imageUrl != null) AsyncImage(thumb(e.imageUrl, 120), null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)))
+                        else Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(C.surfaceAlt), contentAlignment = Alignment.Center) {
+                            Text(if (out) "🍽" else "📝", fontSize = 20.sp)
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(e.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (out && e.isNote) C.danger else C.ink)
+                            Text(
+                                when {
+                                    out -> if (e.isNote) "Logged" else "Went to the fridge"
+                                    e.isLeftover -> "Leftovers"
+                                    else -> plural(e.servings, "serving")
+                                } + (if (!out) e.kcal?.let { " · ${it.roundToInt()} kcal" } ?: "" else ""),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    LogButtons(e, log, Modifier.padding(top = 8.dp, start = 60.dp))
+                }
+            }
+            if (entries.isEmpty()) Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Nothing planned", color = C.faint, modifier = Modifier.weight(1f))
+                LogPill("Ate out", C.danger, Color.Transparent, border = true) { log.outEmpty(today(), meal) }
+            }
         }
     }
 }

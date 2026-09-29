@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlanEntry, type PrepStock } from '../api'
+import { mealNow } from '../components/MealLog'
 import { dayLabel, daysAgo, today } from '../dates'
 import { Button, Empty, PageHeader, SectionTitle, Shimmer, inputCls } from '../components/ui'
 import { kcal, num, plural, thumb } from '../format'
@@ -79,7 +80,7 @@ function BatchCard({ batch: b }: { batch: PlanEntry }) {
   const optimistic = (change: (e: PlanEntry) => PlanEntry) =>
     qc.setQueryData<PlanEntry[]>(['batches'], (list) => list?.map((e) => (e.id === b.id ? change(e) : e)))
   const eat = useMutation({
-    mutationFn: () => api.addEntry({ day: today(), leftover_of: b.id, servings: 1 }),
+    mutationFn: () => api.addEntry({ day: today(), meal: mealNow(), leftover_of: b.id, servings: 1 }),
     onMutate: () => optimistic((e) => ({ ...e, portions_left: (e.portions_left ?? 0) - 1 })),
     onSettled: () => refreshPlan(qc),
   })

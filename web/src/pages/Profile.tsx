@@ -51,7 +51,7 @@ export default function Profile() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="rounded-3xl p-5 ring-1 ring-stone-200">{p ? <Calendar days={p.days} /> : <Shimmer className="h-40 rounded-2xl" />}</div>
+        <div className="rounded-3xl p-5 ring-1 ring-stone-200">{p ? <Calendar days={p.days} out={p.out_days ?? []} /> : <Shimmer className="h-40 rounded-2xl" />}</div>
         {p && (p.cuisines.length > 0 || p.categories.length > 0) && (
           <div className="rounded-3xl p-5 ring-1 ring-stone-200">
             <p className="font-display text-xl font-bold">Your kitchen lately</p>
@@ -125,10 +125,12 @@ const Stat = ({ n, label, dot }: { n?: number; label: string; dot: string }) => 
   </div>
 )
 
-/** Cook Well's grid: one square per day, greener the more you cooked. */
-function Calendar({ days }: { days: Record<string, number> }) {
+/** Cook Well's grid: one square per day, greener the more you cooked; red when you ate out. */
+function Calendar({ days, out }: { days: Record<string, number>; out: string[] }) {
   const start = addDays(weekStart(today()), -7 * (WEEKS - 1))
+  const ateOut = new Set(out)
   return (
+    <div>
     <div className="flex gap-2">
       <div className="grid grid-rows-7 gap-[3px] pt-0 text-[10px] text-stone-400">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className="flex h-3.5 items-center">{d}</span>)}
@@ -137,10 +139,15 @@ function Calendar({ days }: { days: Record<string, number> }) {
         {Array.from({ length: WEEKS * 7 }, (_, i) => {
           const d = addDays(start, i)
           const n = days[d] ?? 0
-          const cls = d > today() ? 'bg-transparent' : n === 0 ? 'bg-sand' : n === 1 ? 'bg-ember-bright/45' : n === 2 ? 'bg-ember-bright/70' : 'bg-ember-bright'
-          return <span key={d} title={`${d}: ${n}`} className={`h-3.5 w-full min-w-2 rounded-[3px] ${cls}`} />
+          const cls = d > today() ? 'bg-transparent' : ateOut.has(d) ? 'bg-danger' : n === 0 ? 'bg-sand' : n === 1 ? 'bg-ember-bright/45' : n === 2 ? 'bg-ember-bright/70' : 'bg-ember-bright'
+          return <span key={d} title={`${d}: ${plural(n, 'meal')} cooked${ateOut.has(d) ? ' · ate out' : ''}`} className={`h-3.5 w-full min-w-2 rounded-[3px] ${cls}`} />
         })}
       </div>
+    </div>
+    <div className="mt-3 flex gap-4 text-xs text-stone-500">
+      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-ember-bright" />Cooked</span>
+      <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-danger" />Ate out</span>
+    </div>
     </div>
   )
 }

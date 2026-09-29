@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, SQLModel, col, select
@@ -31,6 +31,10 @@ class EntryOut(SQLModel):
     grams_left: float | None = None  # of that prep, after what's planned to use it
     # Preps this meal uses that nothing planned covers (the grocery list buys their ingredients).
     short: list[dict] = []  # [{"prep_id", "title", "grams"}]
+    meal: str = "dinner"
+    status: str | None = None  # logged: "eaten" or "out"
+    out_kcal: float | None = None
+    eaten_kcal: float | None = None  # what the log counts: the meal's kcal, or your guess for eating out
 
 
 class PrepUse(SQLModel):
@@ -69,6 +73,9 @@ class EntryIn(SQLModel):
     cook_portions: float | None = None
     made_grams: float | None = None  # a prep: how much you make (default: the whole recipe)
     position: int | None = None  # default: end of the day
+    meal: str = "dinner"
+    status: str | None = None  # "out": log eating out at a meal with nothing planned (a title-less note)
+    out_kcal: float | None = None
 
 
 class EntryPatch(SQLModel):
@@ -79,6 +86,25 @@ class EntryPatch(SQLModel):
     cook_portions: float | None = None  # null turns a batch back into a plain meal
     discarded: float | None = None
     made_grams: float | None = None
+    meal: str | None = None
+    status: str | None = None  # "eaten", "out", or null to undo the log
+    out_kcal: float | None = None
+
+
+MEALS = ("breakfast", "lunch", "dinner")
+STATUSES = ("eaten", "out")
+OUT_TITLE = "Ate out"
+
+
+def eaten(e: PlanEntry) -> float:
+    """Portions eaten at this meal: none if you ate out instead."""
+    return 0 if e.status == "out" else e.servings
+
+
+def check_meal(meal: str) -> str:
+    if meal not in MEALS:
+        raise HTTPException(400, f"meal must be one of {', '.join(MEALS)}")
+    return meal
 
 
 def entries_out(session: Session, user: User, entries: list[PlanEntry], book: Ledger | None = None) -> list[EntryOut]:
@@ -109,7 +135,10 @@ def entries_out(session: Session, user: User, entries: list[PlanEntry], book: Le
                             made_grams=book.made.get(e.id) if prep else None,
                             grams_left=book.left(e) if prep else None,
                             short=[{"prep_id": p, "title": kitchen.recipes[p].title if p in kitchen.recipes else "", "grams": g}
-                                   for (eid, p), g in book.short.items() if eid == e.id]))
+                                   for (eid, p), g in book.short.items() if eid == e.id],
+                            meal=e.meal, status=e.status, out_kcal=e.out_kcal,
+                            eaten_kcal=(e.out_kcal if e.status == "out" else
+                                        round(per * e.servings, 1) if e.status == "eaten" and per is not None else None)))
     return out
 
 
@@ -118,27 +147,31 @@ def portions_left(session: Session, batches: list[PlanEntry]) -> dict[int, float
     ids = [b.id for b in batches]
     taken: dict[int, float] = {}
     for lo in session.exec(select(PlanEntry).where(col(PlanEntry.leftover_of).in_(ids))):
-        taken[lo.leftover_of] = taken.get(lo.leftover_of, 0) + lo.servings
-    return {b.id: round(b.cook_portions - b.servings - taken.get(b.id, 0) - b.discarded, 2) for b in batches}
+        taken[lo.leftover_of] = taken.get(lo.leftover_of, 0) + eaten(lo)
+    return {b.id: round(b.cook_portions - eaten(b) - taken.get(b.id, 0) - b.discarded, 2) for b in batches}
 
 
-def siblings(session: Session, user: User, day: date | None) -> list[PlanEntry]:
+def siblings(session: Session, user: User, day: date | None, meal: str | None = None) -> list[PlanEntry]:
+    """The entries of one list: a day's meal panel, or the queue (which has no panels)."""
     day_matches = col(PlanEntry.day).is_(None) if day is None else PlanEntry.day == day
     stmt = select(PlanEntry).where(PlanEntry.owner_id == user.id, day_matches)
+    if day is not None and meal is not None:
+        stmt = stmt.where(PlanEntry.meal == meal)
     return list(session.exec(stmt.order_by(PlanEntry.position, PlanEntry.id)))
 
 
-def place(session: Session, user: User, entry: PlanEntry, day: date | None, position: int | None) -> None:
-    """Put entry into day's list at position and renumber that list (and the one it left)."""
-    old_day = entry.day
+def place(session: Session, user: User, entry: PlanEntry, day: date | None, position: int | None, meal: str | None = None) -> None:
+    """Put entry into a day's meal (or the queue) at position and renumber that list (and the one it left)."""
+    old_day, old_meal = entry.day, entry.meal
     entry.day = day
-    target = [e for e in siblings(session, user, day) if e.id != entry.id]
+    entry.meal = meal or entry.meal
+    target = [e for e in siblings(session, user, day, entry.meal) if e.id != entry.id]
     target.insert(len(target) if position is None else max(0, min(position, len(target))), entry)
     for i, e in enumerate(target):
         e.position = i
         session.add(e)
-    if old_day != day and entry.id is not None:
-        for i, e in enumerate(x for x in siblings(session, user, old_day) if x.id != entry.id):
+    if (old_day, old_meal if old_day else None) != (day, entry.meal if day else None) and entry.id is not None:
+        for i, e in enumerate(x for x in siblings(session, user, old_day, old_meal) if x.id != entry.id):
             e.position = i
             session.add(e)
 
@@ -167,8 +200,6 @@ def get_plan(start: date, days: int = 7, session: Session = Depends(get_session)
 def add_entry(body: EntryIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
     if body.leftover_of is not None:
         source = owned_entry(session, body.leftover_of, user)
-        if source.cook_portions is None:
-            raise HTTPException(400, "that meal isn't a batch")
         body.recipe_id = None
         body.cook_portions = None
     elif body.recipe_id is not None:
@@ -176,14 +207,21 @@ def add_entry(body: EntryIn, session: Session = Depends(get_session), user: User
         if recipe.is_prep:
             # Making a prep: nothing is eaten at this entry; what's made goes to the fridge.
             body.servings, body.cook_portions = 0, None
+    elif body.status == "out":
+        body.title = body.title.strip() or OUT_TITLE
     elif not body.title.strip():
         raise HTTPException(400, "need a recipe, a batch or a title")
+    if body.leftover_of is not None and source.cook_portions is None and source.status != "out":
+        raise HTTPException(400, "that meal isn't a batch")
     entry = PlanEntry(owner_id=user.id, recipe_id=body.recipe_id, leftover_of=body.leftover_of,
                       title=body.title.strip(), servings=body.servings, cook_portions=body.cook_portions,
-                      made_grams=body.made_grams if body.made_grams and body.made_grams > 0 else None)
+                      made_grams=body.made_grams if body.made_grams and body.made_grams > 0 else None,
+                      meal=check_meal(body.meal))
     check_batch(entry)
     session.add(entry)
     session.flush()
+    if body.status:
+        log(session, entry, body.status, body.out_kcal)
     place(session, user, entry, body.day, body.position)
     session.commit()
     return entries_out(session, user, [entry])[0]
@@ -208,7 +246,7 @@ def update_entry(entry_id: int, body: EntryPatch, session: Session = Depends(get
         if session.get(Recipe, entry.recipe_id).is_prep:
             raise HTTPException(400, "a prep is made by weight (made_grams), not in portions")
         entry.cook_portions = fields["cook_portions"]
-        if entry.cook_portions is None:
+        if entry.cook_portions is None and entry.status != "out":
             entry.discarded = 0
             # Its leftovers go with it.
             for lo in session.exec(select(PlanEntry).where(PlanEntry.leftover_of == entry.id)):
@@ -217,12 +255,40 @@ def update_entry(entry_id: int, body: EntryPatch, session: Session = Depends(get
         entry.discarded = max(0, fields["discarded"])
     if "made_grams" in fields:
         entry.made_grams = fields["made_grams"] if fields["made_grams"] and fields["made_grams"] > 0 else None
+    if "status" in fields or ("out_kcal" in fields and entry.status == "out"):
+        log(session, entry, fields.get("status", entry.status), fields.get("out_kcal", entry.out_kcal))
     check_batch(entry)
-    if "day" in fields or "position" in fields:
-        place(session, user, entry, fields.get("day", entry.day), fields.get("position"))
+    if "day" in fields or "position" in fields or fields.get("meal"):
+        place(session, user, entry, fields.get("day", entry.day), fields.get("position"),
+              check_meal(fields["meal"]) if fields.get("meal") else None)
     session.add(entry)
     session.commit()
     return entries_out(session, user, [entry])[0]
+
+
+def log(session: Session, entry: PlanEntry, status: str | None, out_kcal: float | None) -> None:
+    """Log a meal as eaten or as eaten out (or undo the log).
+
+    Eating out leaves what was planned uneaten, so it goes to the fridge: a plain meal becomes a
+    batch of its servings, a batch keeps all its portions, a leftover's portions stay in its batch.
+    """
+    if status is not None and status not in STATUSES:
+        raise HTTPException(400, f"status must be one of {', '.join(STATUSES)} or null")
+    recipe = session.get(Recipe, entry.recipe_id) if entry.recipe_id else None
+    if status and recipe and recipe.is_prep:
+        raise HTTPException(400, "making a prep isn't a meal to log")
+    was_out = entry.status == "out"
+    entry.status = status
+    entry.logged_at = datetime.now(timezone.utc) if status else None
+    entry.out_kcal = max(0.0, out_kcal) if status == "out" and out_kcal is not None else None
+    if recipe and not entry.leftover_of:
+        if status == "out" and entry.cook_portions is None:
+            entry.cook_portions = entry.servings
+        elif was_out and status != "out" and entry.cook_portions == entry.servings:
+            # Back to a plain meal, unless leftovers were planned from it meanwhile (then it's a batch for them too).
+            taken = sum(lo.servings for lo in session.exec(select(PlanEntry).where(PlanEntry.leftover_of == entry.id)))
+            entry.cook_portions = entry.servings + taken if taken else None
+    session.add(entry)
 
 
 @router.delete("/plan/{entry_id}")

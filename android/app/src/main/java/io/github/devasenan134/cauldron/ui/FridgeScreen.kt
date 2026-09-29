@@ -128,7 +128,7 @@ fun FridgeScreen(openRecipe: (Int) -> Unit) {
                                 onAte = {
                                     store.editEntry(b.id) { it.copy(portionsLeft = (it.portionsLeft ?: 0.0) - 1) }
                                     act("Logged 1 portion for today") {
-                                        app.api.addEntry(buildJsonObject { put("day", today()); put("leftover_of", b.id); put("servings", 1.0) })
+                                        app.api.addEntry(buildJsonObject { put("day", today()); put("meal", mealNow()); put("leftover_of", b.id); put("servings", 1.0) })
                                     }
                                 },
                                 onToss = { tossing = b })

@@ -121,6 +121,11 @@ class PlanEntry(SQLModel, table=True):
     discarded: float = 0  # batch portions (or prep grams) thrown away
     # Cooking a prepped ingredient: grams made. Meals that use it draw on it, the rest is in the fridge.
     made_grams: float | None = None
+    meal: str = "dinner"  # breakfast, lunch or dinner (the planner's panels)
+    # Logged: "eaten", or "out" (ate out instead: what was planned goes to the fridge). None = not yet.
+    status: str | None = None
+    out_kcal: float | None = None  # a guess at what you ate out
+    logged_at: datetime | None = None
     created_at: datetime = Field(default_factory=now)
 
 

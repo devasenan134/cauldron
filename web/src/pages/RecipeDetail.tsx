@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type Ingredient, type RecipeDetail as Recipe } from '../api'
+import { api, type Ingredient, type Meal, type RecipeDetail as Recipe } from '../api'
+import { MealPicker, mealNow } from '../components/MealLog'
 import { today } from '../dates'
 import { refreshPlan } from '../plan'
 import { Button, DayChips, Pill, Shimmer, Stepper, inputCls } from '../components/ui'
@@ -285,12 +286,13 @@ function MakePrep({ r }: { r: Recipe }) {
 function AddToPlan({ r }: { r: Recipe }) {
   const qc = useQueryClient()
   const [day, setDay] = useState<string | null>(today())
+  const [meal, setMeal] = useState<Meal>(mealNow())
   const [cook, setCook] = useState(r.servings ?? 1)
   const [eat, setEat] = useState(1)
   const extra = cook - eat
   const add = useMutation({
     // Cooking more than you eat makes a batch; the rest goes in the fridge.
-    mutationFn: () => api.addEntry({ day, recipe_id: r.id, servings: eat, cook_portions: extra > 0 ? cook : null }),
+    mutationFn: () => api.addEntry({ day, meal, recipe_id: r.id, servings: eat, cook_portions: extra > 0 ? cook : null }),
     onSuccess: () => refreshPlan(qc),
   })
   return (
@@ -298,6 +300,7 @@ function AddToPlan({ r }: { r: Recipe }) {
       <h3 className="font-display text-2xl font-bold">Add to plan</h3>
       <p className="mb-3 mt-4 text-sm font-semibold">When</p>
       <DayChips selected={day} onPick={setDay} days={8} />
+      {day !== null && <div className="mt-3"><MealPicker meal={meal} onPick={setMeal} /></div>}
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div className="flex flex-col items-center rounded-2xl bg-cream p-3">
                     <Stepper big value={cook} onChange={(v) => { setCook(v); if (eat > v) setEat(v) }} label="cook" />

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type Me, type PlanEntry } from '../api'
+import { api, MEALS, type Me, type PlanEntry } from '../api'
+import { LogButtons, MEAL_EMOJI, MEAL_LABEL, useLogOut } from '../components/MealLog'
 import { ME, useMe } from '../auth'
 import { addDays, daysAgo, dayLabel, greeting, today, weekStart, weekdayLong } from '../dates'
 import { Button, SectionTitle, Shimmer } from '../components/ui'
@@ -18,9 +19,13 @@ export default function Home() {
   const grocery = useQuery({ queryKey: ['grocery'], queryFn: api.grocery })
   const [editingGoal, setEditingGoal] = useState(false)
 
-  const todays = (plan.data?.days[today()] ?? []).filter((e) => e.recipe_id != null || e.leftover_of != null)
+  const todayAll = plan.data?.days[today()] ?? []
+  const todays = todayAll.filter((e) => e.recipe_id != null || e.leftover_of != null)
   const tomorrows = ((nextWeek === week ? plan.data : nextPlan.data)?.days[tomorrow] ?? []).filter((e) => e.recipe_id != null || e.leftover_of != null)
-  const eaten = todays.reduce((s, e) => s + (e.kcal ?? 0), 0)
+  // Calories count what you've logged; the rest of today's plan shows as still to come.
+  const eaten = todayAll.reduce((s, e) => s + (e.eaten_kcal ?? 0), 0)
+  const planned = todays.filter((e) => !e.status).reduce((s, e) => s + (e.kcal ?? 0), 0)
+  const next = todays.find((e) => !e.status && !e.is_prep)
   const goal = me?.kcal_goal ?? 2200
   const inFridge = batches.data?.filter((b) => b.day && b.day <= today()) ?? []
   const toBuy = grocery.data?.filter((i) => !i.checked).length ?? 0
@@ -40,12 +45,12 @@ export default function Home() {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div>
           {plan.isPending ? <Shimmer className="h-80 rounded-[28px]" />
-            : todays.length ? <Hero entry={todays[0]} label="Today" more={todays.length - 1} />
+            : next ? <Hero entry={next} label={MEAL_LABEL[next.meal]} more={todays.filter((e) => !e.status && !e.is_prep).length - 1} />
             : tomorrows.length ? <Hero entry={tomorrows[0]} label="Tomorrow" more={tomorrows.length - 1} />
             : <EmptyHero />}
         </div>
         <div className="flex flex-col gap-5">
-          <CaloriesCard eaten={eaten} goal={goal} onEdit={() => setEditingGoal(true)} />
+          <CaloriesCard eaten={eaten} planned={planned} goal={goal} onEdit={() => setEditingGoal(true)} />
           {/* The grocery list lives here now (Profile took its place in the menu). */}
           <Link to="/grocery" className="press flex items-center gap-4 rounded-3xl bg-ink px-6 py-5 text-cream">
             <span className="text-2xl">🧺</span>
@@ -65,19 +70,19 @@ export default function Home() {
       {editingGoal && <GoalDialog goal={goal} onClose={() => setEditingGoal(false)} />}
 
       <div className="grid gap-x-8 lg:grid-cols-2">
-        {todays.length > 1 && (
-          <section>
-            <SectionTitle>Today's meals</SectionTitle>
-            <div className="rounded-3xl bg-paper p-2">{todays.map((e) => <MealRow key={e.id} e={e} />)}</div>
-          </section>
-        )}
+        <section className="min-w-0">
+          <SectionTitle action={<Link to="/planner" className="font-semibold text-ember hover:underline">Plan</Link>}>Log today</SectionTitle>
+          <div className="space-y-2">
+            {MEALS.map((m) => <LogPanel key={m} meal={m} entries={todayAll.filter((e) => e.meal === m && !e.is_prep)} />)}
+          </div>
+        </section>
         {inFridge.length > 0 && (
           <section>
             <SectionTitle action={<Link to="/fridge" className="font-semibold text-ember hover:underline">See all</Link>}>In the fridge</SectionTitle>
             <div className="space-y-2">{inFridge.slice(0, 3).map((b) => <FridgeAlert key={b.id} b={b} />)}</div>
           </section>
         )}
-        {todays.length > 0 && tomorrows.length > 0 && (
+        {tomorrows.length > 0 && (
           <section>
             <SectionTitle>Tomorrow</SectionTitle>
             <div className="rounded-3xl bg-paper p-2">{tomorrows.map((e) => <MealRow key={e.id} e={e} />)}</div>
@@ -120,7 +125,7 @@ function EmptyHero() {
   )
 }
 
-function CaloriesCard({ eaten, goal, onEdit }: { eaten: number; goal: number; onEdit: () => void }) {
+function CaloriesCard({ eaten, planned, goal, onEdit }: { eaten: number; planned: number; goal: number; onEdit: () => void }) {
   const over = eaten > goal
   const left = goal - eaten
   return (
@@ -131,11 +136,16 @@ function CaloriesCard({ eaten, goal, onEdit }: { eaten: number; goal: number; on
         <span className="text-stone-500">/ {goal.toLocaleString()} kcal</span>
       </p>
       <div className="mt-4 h-3 overflow-hidden rounded-full bg-stone-200">
-        <div className={`h-full rounded-full transition-[width] duration-700 ${over ? 'bg-danger' : 'bg-ember-bright'}`}
-          style={{ width: `${Math.min(100, (eaten / goal) * 100)}%` }} />
+        <div className="flex h-full">
+          <div className={`h-full rounded-full transition-[width] duration-700 ${over ? 'bg-danger' : 'bg-ember-bright'}`}
+            style={{ width: `${Math.min(100, (eaten / goal) * 100)}%` }} />
+          {/* Still to come: the meals planned today that you haven't logged yet. */}
+          {!over && planned > 0 && <div className="h-full bg-ember-bright/30 transition-[width] duration-700" style={{ width: `${Math.min(100 - (eaten / goal) * 100, (planned / goal) * 100)}%` }} />}
+        </div>
       </div>
       <p className="mt-2 text-xs text-stone-500">
-        {left >= 0 ? `${Math.round(left).toLocaleString()} kcal left in your plan` : `${Math.round(-left).toLocaleString()} kcal over your goal`}
+        {left >= 0 ? `${Math.round(left).toLocaleString()} kcal left` : `${Math.round(-left).toLocaleString()} kcal over your goal`}
+        {planned > 0 && ` · ${Math.round(planned).toLocaleString()} still planned`}
       </p>
     </button>
   )
@@ -151,7 +161,47 @@ function Tile({ to, emoji, title, sub }: { to: string; emoji: string; title: str
   )
 }
 
-function MealRow({ e }: { e: PlanEntry }) {
+/** One meal of today: what's planned, with buttons to log it (or log eating out when nothing is). */
+function LogPanel({ meal, entries }: { meal: (typeof MEALS)[number]; entries: PlanEntry[] }) {
+  const logOut = useLogOut(today(), meal)
+  const kcalIn = entries.reduce((s, e) => s + (e.eaten_kcal ?? 0), 0)
+  return (
+    <div className="rounded-3xl bg-paper p-2">
+      <div className="flex items-center justify-between px-2 pb-1 pt-1">
+        <span className="text-xs font-bold uppercase tracking-wider text-stone-500">{MEAL_EMOJI[meal]} {MEAL_LABEL[meal]}</span>
+        {kcalIn > 0 && <span className="text-xs font-bold tabular-nums text-ember">{Math.round(kcalIn)} kcal logged</span>}
+      </div>
+      {entries.map((e) => <MealRow key={e.id} e={e} log />)}
+      {entries.length === 0 && (
+        <div className="flex items-center justify-between gap-2 px-2 pb-1.5">
+          <span className="text-sm text-stone-400">Nothing planned</span>
+          <button onClick={logOut} className="press rounded-full px-2.5 py-1 text-xs font-bold text-danger ring-1 ring-danger/40 hover:bg-danger/10">Ate out</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MealRow({ e, log }: { e: PlanEntry; log?: boolean }) {
+  if (log) {
+    const out = e.status === 'out'
+    const title = e.recipe_id ? <Link to={`/recipes/${e.recipe_id}`} className="font-semibold hover:text-ember">{e.title}</Link>
+      : <span className={`font-semibold ${out ? 'text-danger' : ''}`}>{e.title}</span>
+    return (
+      <div className={`flex items-center gap-3 rounded-2xl p-2 ${out ? 'bg-danger/10' : ''}`}>
+        {e.image_url ? <img src={thumb(e.image_url, 120)} alt="" className={`h-12 w-12 rounded-xl bg-sand object-cover ${out ? 'opacity-60' : ''}`} />
+          : <span className="grid h-12 w-12 place-items-center rounded-xl bg-sand text-xl">{out ? '🍽' : '📝'}</span>}
+        <div className="min-w-0 flex-1">
+          <p className="truncate">{title}</p>
+          <p className="text-xs text-stone-500">
+            {out ? (e.recipe_id || e.leftover_of ? 'Went to the fridge' : 'Logged') : e.leftover_of ? 'Leftovers' : plural(e.servings, 'serving')}
+            {e.kcal != null && !out && ` · ${Math.round(e.kcal)} kcal`}
+          </p>
+        </div>
+        <LogButtons entry={e} />
+      </div>
+    )
+  }
   const inner = (
     <div className="flex items-center gap-3 rounded-2xl p-2 hover:bg-sand">
       <img src={thumb(e.image_url, 120)} alt="" className="h-12 w-12 rounded-xl bg-sand object-cover" />

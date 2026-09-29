@@ -37,6 +37,7 @@ class ProfileOut(SQLModel):
     favorites: int
     streak: int  # days in a row with something cooked, up to today (or yesterday)
     days: dict[date, int]  # meals cooked per day, last 20 weeks (for the calendar)
+    out_days: list[date] = []  # days you logged eating out, last 20 weeks (red on the calendar)
     cuisines: list[tuple[str, int]]  # most cooked lately
     categories: list[tuple[str, int]]
 
@@ -58,8 +59,10 @@ def profile(session: Session = Depends(get_session), user: User = Depends(curren
     categories = Counter(recipes[i].category for i in recent_ids if i in recipes and recipes[i].category)
     mine = len(session.exec(select(Recipe.id).where(Recipe.owner_id == user.id, Recipe.source != SHARED_SOURCE)).all())
     favorites = len(session.exec(select(Favorite.id).where(Favorite.owner_id == user.id)).all())
+    out_days = sorted(set(session.exec(select(PlanEntry.day).where(
+        PlanEntry.owner_id == user.id, PlanEntry.status == "out", PlanEntry.day >= since))))
     return ProfileOut(cooked=len(all_cooked), recipes_cooked=len({e.recipe_id for e in all_cooked}), mine=mine, favorites=favorites,
-                      streak=streak, days=dict(per_day), cuisines=cuisines.most_common(5), categories=categories.most_common(5))
+                      streak=streak, days=dict(per_day), out_days=out_days, cuisines=cuisines.most_common(5), categories=categories.most_common(5))
 
 
 class CookedOut(SQLModel):
