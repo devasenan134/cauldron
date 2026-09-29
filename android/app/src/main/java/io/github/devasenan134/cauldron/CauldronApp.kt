@@ -56,6 +56,12 @@ class CauldronApp : Application() {
         runCatching { session.updateMe(api.setTheme(theme)) }
     }
 
+    /** Grid or list in Profile → Catalog; kept on the server, like the website's. */
+    suspend fun setCatalogView(view: String) {
+        (session.state.value as? Session.State.SignedIn)?.me?.let { session.updateMe(it.copy(catalogView = view)) }
+        runCatching { session.updateMe(api.setCatalogView(view)) }
+    }
+
     suspend fun signOutLocally() {
         grocery.clear()
         store.clear()

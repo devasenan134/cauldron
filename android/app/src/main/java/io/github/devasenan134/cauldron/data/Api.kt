@@ -38,6 +38,7 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun me(): Me = get("/auth/me")
     suspend fun setKcalGoal(kcal: Int): Me = patch("/auth/me", buildJsonObject { put("kcal_goal", kcal) })
     suspend fun setTheme(theme: String): Me = patch("/auth/me", buildJsonObject { put("theme", theme) })
+    suspend fun setCatalogView(view: String): Me = patch("/auth/me", buildJsonObject { put("catalog_view", view) })
     suspend fun signOut() { post<JsonElement>("/auth/logout", JsonObject(emptyMap())) }
 
     // --- recipes
@@ -100,8 +101,8 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
         else delete<JsonElement>("/folders/$folderId/recipes/$recipeId")
     }
     /** Copies the recipe as your own; returns the copy's id. */
-    suspend fun makeVariation(recipeId: Int): Int =
-        (post<JsonObject>("/recipes/$recipeId/variation", JsonObject(emptyMap()))["id"].toString()).toInt()
+    suspend fun makeVariation(recipeId: Int, body: RecipeIn): Int =
+        (post<JsonObject>("/recipes/$recipeId/variation", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)["id"].toString()).toInt()
 
     // --- importing from videos
     suspend fun importStatus(): ImportStatus = get("/import/status")

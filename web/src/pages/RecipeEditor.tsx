@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type RecipeDetail, type RecipeIn } from '../api'
 import { Button, Chip } from '../components/ui'
 import { thumb } from '../format'
@@ -62,17 +62,22 @@ async function shrink(file: File): Promise<Blob> {
 export default function RecipeEditor() {
   const params = useParams()
   const id = params.id ? Number(params.id) : null
+  // "Make my version": a new recipe that starts as a copy of this one (made on save).
+  const from = useSearchParams()[0].get('from')
+  const fromId = id == null && from ? Number(from) : null
   const navigate = useNavigate()
   const qc = useQueryClient()
   const facets = useQuery({ queryKey: ['facets'], queryFn: api.facets })
   const preps = useQuery({ queryKey: ['preps'], queryFn: api.preps })
   const prepNamed = (name: string) => preps.data?.find((p) => p.id !== id && p.title.trim().toLowerCase().replace(/s$/, '') === name.trim().toLowerCase().replace(/s$/, ''))
-  const existing = useQuery({ queryKey: ['recipe', id], queryFn: () => api.recipe(id!), enabled: id != null })
-  const [d, setD] = useState<Draft | null>(id == null ? empty() : null)
-  const [original, setOriginal] = useState<string>(id == null ? JSON.stringify(toBody(empty())) : '')
+  const source = id ?? fromId
+  const existing = useQuery({ queryKey: ['recipe', source], queryFn: () => api.recipe(source!), enabled: source != null })
+  const [d, setD] = useState<Draft | null>(source == null ? empty() : null)
+  const [original, setOriginal] = useState<string>(source == null ? JSON.stringify(toBody(empty())) : '')
   // Fill the form once the recipe arrives (during render, not in an effect).
   if (existing.data && d == null) {
     const draft = fromRecipe(existing.data)
+    if (fromId != null) draft.title = `${existing.data.title} (my version)`
     setOriginal(JSON.stringify(toBody(draft)))
     setD(draft)
   }
@@ -108,7 +113,9 @@ export default function RecipeEditor() {
     if (!d.title.trim()) { setError('Give your recipe a title'); return }
     setSaving(true); setError(null)
     try {
-      const r = id == null ? await api.createRecipe(toBody(d)) : await api.updateRecipe(id, toBody(d))
+      const r = fromId != null ? await api.recipe((await api.makeVariation(fromId, toBody(d))).id)
+        : id == null ? await api.createRecipe(toBody(d)) : await api.updateRecipe(id, toBody(d))
+      if (fromId != null) { qc.invalidateQueries({ queryKey: ['recipe', fromId] }); qc.invalidateQueries({ queryKey: ['catalog'] }) }
       qc.setQueryData(['recipe', r.id], r)
       qc.invalidateQueries({ queryKey: ['recipes'] })
       refreshPlan(qc)
@@ -139,7 +146,7 @@ export default function RecipeEditor() {
     <div className="rise mx-auto max-w-3xl">
       <div className="sticky top-16 z-20 -mx-5 mb-4 flex items-center gap-3 bg-cream/90 px-5 py-3 backdrop-blur-md">
         <button onClick={() => navigate(-1)} className="press grid h-11 w-11 place-items-center rounded-full bg-paper text-lg shadow-[0_4px_16px_rgba(0,0,0,0.08)] ring-1 ring-stone-200" aria-label="Back">←</button>
-        <h1 className="flex-1 font-display text-3xl font-extrabold">{id == null ? 'New recipe' : 'Edit recipe'}</h1>
+        <h1 className="flex-1 font-display text-3xl font-extrabold">{fromId != null ? 'My version' : id == null ? 'New recipe' : 'Edit recipe'}</h1>
         <Button variant="accent" onClick={save} disabled={saving || uploading}>{saving ? 'Saving…' : 'Save'}</Button>
       </div>
       {error && <p className="mb-4 rounded-2xl bg-pink-soft p-3 text-sm font-semibold text-pink-deep">{error}</p>}

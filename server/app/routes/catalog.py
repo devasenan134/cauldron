@@ -8,6 +8,7 @@ from sqlmodel import Session, SQLModel, col, delete, select
 from ..db import get_session
 from ..deps import current_user
 from ..models import Favorite, Folder, FolderRecipe, Ingredient, PlanEntry, Recipe, Step, User
+from ..recipe_edit import RecipeIn, save_recipe
 from .recipes import SHARED_SOURCE, RecipeSummary, nutrition_for, owned_recipe
 
 router = APIRouter()
@@ -200,8 +201,13 @@ def remove_from_folder(folder_id: int, recipe_id: int, session: Session = Depend
 # --- variations
 
 @router.post("/recipes/{recipe_id}/variation")
-def make_variation(recipe_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
-    """Copy a recipe (ingredients with their foods and weights, steps, photo) as your own, to change."""
+def make_variation(recipe_id: int, body: RecipeIn | None = None, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Copy a recipe (ingredients with their foods and weights, steps, photo) as your own.
+
+    With body (the editor's form, as saved), the copy is written as that: the apps open the editor
+    on the original and only make the copy when you save, so backing out leaves nothing behind.
+    Ingredients you didn't change keep the original's foods and hand-fixed weights.
+    """
     src = owned_recipe(session, recipe_id, user)
     copy = Recipe(**src.model_dump(exclude={"id", "owner_id", "source", "parent_id", "created_at", "updated_at", "title", "slug"}),
                   owner_id=user.id, source="manual", parent_id=src.id, title=f"{src.title} (my version)", slug=f"{src.slug}-mine")
@@ -211,5 +217,10 @@ def make_variation(recipe_id: int, session: Session = Depends(get_session), user
         session.add(Ingredient(**i.model_dump(exclude={"id", "recipe_id"}), recipe_id=copy.id))
     for st in session.exec(select(Step).where(Step.recipe_id == src.id)):
         session.add(Step(**st.model_dump(exclude={"id", "recipe_id"}), recipe_id=copy.id))
+    session.flush()
+    if body is not None:
+        if not body.title.strip():
+            raise HTTPException(400, "a recipe needs a title")
+        save_recipe(session, copy, body)
     session.commit()
     return {"id": copy.id}

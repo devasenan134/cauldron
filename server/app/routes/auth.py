@@ -23,16 +23,19 @@ class Me(SQLModel):
     is_owner: bool
     kcal_goal: int
     theme: str
+    catalog_view: str = "grid"
     token: str | None = None
 
 
 class MePatch(SQLModel):
     kcal_goal: int | None = Field(default=None, ge=500, le=10000)
     theme: Literal["system", "light", "dark"] | None = None
+    catalog_view: Literal["grid", "list"] | None = None
 
 
 def me_out(user: User) -> Me:
-    return Me(email=user.email, name=user.name, is_owner=is_owner(user), kcal_goal=user.kcal_goal, theme=user.theme)
+    return Me(email=user.email, name=user.name, is_owner=is_owner(user), kcal_goal=user.kcal_goal, theme=user.theme,
+              catalog_view=user.catalog_view)
 
 
 @router.get("/config")
@@ -64,6 +67,8 @@ def update_me(body: MePatch, session: Session = Depends(get_session), user: User
         user.kcal_goal = body.kcal_goal
     if body.theme is not None:
         user.theme = body.theme
+    if body.catalog_view is not None:
+        user.catalog_view = body.catalog_view
     session.add(user)
     session.commit()
     session.refresh(user)

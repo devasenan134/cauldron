@@ -130,7 +130,7 @@ export type GroceryItem = {
   sources: string[]
 }
 
-export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number; theme: 'system' | 'light' | 'dark' }
+export type Me = { email: string; name: string; is_owner: boolean; kcal_goal: number; theme: 'system' | 'light' | 'dark'; catalog_view: 'grid' | 'list' }
 
 export type AppRelease = { version: string; notes: string; size: number }
 
@@ -211,6 +211,7 @@ export const api = {
   signOut: () => request<{ ok: boolean }>('POST', '/auth/logout'),
   setKcalGoal: (kcal_goal: number) => request<Me>('PATCH', '/auth/me', { kcal_goal }),
   setTheme: (theme: Me['theme']) => request<Me>('PATCH', '/auth/me', { theme }),
+  setCatalogView: (catalog_view: Me['catalog_view']) => request<Me>('PATCH', '/auth/me', { catalog_view }),
   appLatest: () => request<AppRelease | null>('GET', '/app/latest'),
 
   recipesFiltered: (f: RecipeFilter) => {
@@ -249,7 +250,8 @@ export const api = {
   folder: (id: number) => request<{ id: number; name: string; recipes: RecipeSummary[] }>('GET', `/folders/${id}`),
   setInFolder: (folderId: number, recipeId: number, on: boolean) =>
     request<{ ok: boolean }>(on ? 'PUT' : 'DELETE', `/folders/${folderId}/recipes/${recipeId}`),
-  makeVariation: (id: number) => request<{ id: number }>('POST', `/recipes/${id}/variation`),
+  /** Your copy of a recipe, saved as [body] (the editor's form). */
+  makeVariation: (id: number, body?: RecipeIn) => request<{ id: number }>('POST', `/recipes/${id}/variation`, body),
   templates: () => request<GroceryTemplate[]>('GET', '/grocery/templates'),
   saveTemplate: (id: number | null, name: string, items: Partial<TemplateItem>[]) =>
     id == null ? request<GroceryTemplate>('POST', '/grocery/templates', { name, items }) : request<GroceryTemplate>('PUT', `/grocery/templates/${id}`, { name, items }),

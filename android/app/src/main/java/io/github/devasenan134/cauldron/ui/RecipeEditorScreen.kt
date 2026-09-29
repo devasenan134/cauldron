@@ -141,14 +141,16 @@ private class Draft {
 /** Write a recipe of your own, or edit one ([id]). [saved] gets the recipe's id. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted: () -> Unit) {
+fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted: () -> Unit, from: Int? = null) {
+    // from: "Make my version" of that recipe: a new recipe that starts as its copy (made on save).
+    val source = id ?: from
     val app = app()
     val store = app.store
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val draft = remember { Draft() }
-    var loaded by remember { mutableStateOf(id == null) }
+    var loaded by remember { mutableStateOf(source == null) }
     var saving by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -159,15 +161,20 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
     fun stem(t: String) = t.trim().lowercase().removeSuffix("s")
     fun prepNamed(name: String) = preps.firstOrNull { stem(it.title) == stem(name) && name.isNotBlank() }
     // What the form held when it opened: leaving with changes asks first.
-    var original by remember { mutableStateOf<RecipeIn?>(if (id == null) Draft().toBody() else null) }
+    var original by remember { mutableStateOf<RecipeIn?>(if (source == null) Draft().toBody() else null) }
     val dirty = loaded && original != null && draft.toBody() != original
     val leave = { if (dirty) confirmDiscard = true else back() }
     BackHandler(enabled = dirty) { confirmDiscard = true }
 
     LaunchedEffect(id) {
         runCatching { store.loadFacets() }
-        if (id != null && !loaded) {
-            try { draft.fill(store.recipe.value[id] ?: store.loadRecipe(id)); original = draft.toBody(); loaded = true } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
+        if (source != null && !loaded) {
+            try {
+                val r = store.recipe.value[source] ?: store.loadRecipe(source)
+                draft.fill(r)
+                if (id == null) draft.title = "${r.title} (my version)"
+                original = draft.toBody(); loaded = true
+            } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
         }
     }
 
@@ -186,7 +193,8 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
         saving = true
         scope.launch {
             try {
-                val r = if (id == null) app.api.createRecipe(draft.toBody()) else app.api.updateRecipe(id, draft.toBody())
+                val r = if (from != null && id == null) app.api.recipe(app.api.makeVariation(from, draft.toBody())).also { store.forgetRecipe(from) }
+                    else if (id == null) app.api.createRecipe(draft.toBody()) else app.api.updateRecipe(id, draft.toBody())
                 store.putRecipe(r); store.recipesChanged(); store.refreshPlans()
                 saved(r.id)
             } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) } finally { saving = false }
@@ -198,7 +206,7 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
         // Pinned: Save stays in reach however far down the form you are.
                 Row(Modifier.fillMaxWidth().background(C.bg).statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     FloatingCircle(leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = C.ink) }
-                    Text(if (id == null) "New recipe" else "Edit recipe", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 14.dp))
+                    Text(if (from != null && id == null) "My version" else if (id == null) "New recipe" else "Edit recipe", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 14.dp))
                     Button(onClick = ::save, enabled = !saving && !uploading && loaded, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo)) {
                         if (saving) CircularProgressIndicator(Modifier.size(18.dp), color = C.onGo, strokeWidth = 2.dp) else Text("Save", fontWeight = FontWeight.Bold)
                     }

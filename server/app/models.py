@@ -14,6 +14,7 @@ class User(SQLModel, table=True):
     name: str = ""
     kcal_goal: int = 2200  # daily calorie goal, shown on Home (app and website)
     theme: str = "system"  # system | light | dark, for the app and the website
+    catalog_view: str = "grid"  # grid | list: how Profile → Catalog shows recipes
     created_at: datetime = Field(default_factory=now)
 
 

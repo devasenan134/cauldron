@@ -1,5 +1,13 @@
 package io.github.devasenan134.cauldron.ui
 
+import androidx.compose.foundation.clickable
+
+import androidx.compose.material.icons.automirrored.filled.ViewList
+
+import androidx.compose.material.icons.filled.GridView
+
+import androidx.compose.foundation.lazy.LazyRow
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +78,9 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
     var profile by remember { mutableStateOf<Profile?>(null) }
     var cooked by remember { mutableStateOf<List<Cooked>?>(null) }
     var catalog by remember { mutableStateOf<Catalog?>(null) }
-    var tab by rememberSaveable { mutableStateOf("cooked") }
+    var tab by rememberSaveable { mutableStateOf("catalog") }
+    val grid = me?.catalogView != "list"
+    val setView = { v: String -> app.scope.launch { app.setCatalogView(v) }; Unit }
     var shelf by rememberSaveable { mutableStateOf("mine") } // mine | favorites | folders
     var newFolder by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -136,7 +146,7 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
         }
         // Cooked | Catalog
         item {
-            Row(Modifier.padding(top = 22.dp, bottom = 8.dp)) { Segmented(listOf("cooked" to "Cooked", "catalog" to "Catalog"), tab) { tab = it } }
+            Row(Modifier.padding(top = 22.dp, bottom = 8.dp)) { Segmented(listOf("catalog" to "Catalog", "cooked" to "Cooked"), tab) { tab = it } }
         }
         if (tab == "cooked") {
             val list = cooked
@@ -151,10 +161,22 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
             }
         } else {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)) {
-                    Chip("My recipes" + (catalog?.mine?.size?.let { " · $it" } ?: ""), shelf == "mine") { shelf = "mine" }
-                    Chip("Favorites" + (catalog?.favorites?.size?.let { " · $it" } ?: ""), shelf == "favorites") { shelf = "favorites" }
-                    Chip("Folders" + (catalog?.folders?.size?.let { " · $it" } ?: ""), shelf == "folders") { shelf = "folders" }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                        item { Chip("My recipes" + (catalog?.mine?.size?.let { " · $it" } ?: ""), shelf == "mine") { shelf = "mine" } }
+                        item { Chip("Favorites" + (catalog?.favorites?.size?.let { " · $it" } ?: ""), shelf == "favorites") { shelf = "favorites" } }
+                        item { Chip("Folders" + (catalog?.folders?.size?.let { " · $it" } ?: ""), shelf == "folders") { shelf = "folders" } }
+                    }
+                    // Grid or list (saved on your account, like the website's).
+                    Row(Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(C.surfaceAlt).padding(3.dp)) {
+                        listOf("grid" to Icons.Default.GridView, "list" to Icons.AutoMirrored.Filled.ViewList).forEach { (v, icon) ->
+                            val on = (v == "grid") == grid
+                            Box(Modifier.size(width = 40.dp, height = 34.dp).clip(RoundedCornerShape(50)).background(if (on) C.surface else Color.Transparent)
+                                .clickable { setView(v) }, contentAlignment = Alignment.Center) {
+                                Icon(icon, if (v == "grid") "Grid" else "List", tint = if (on) C.ink else C.muted, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
                 }
             }
             val c = catalog
@@ -162,11 +184,11 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
                 c == null -> item { Shimmer(Modifier.fillMaxWidth().height(80.dp), RoundedCornerShape(20.dp)) }
                 shelf == "mine" -> {
                     if (c.mine.isEmpty()) item { Empty("🧑‍🍳", "No recipes of your own yet", "Write one from Recipes (+), or open any recipe and tap “Make my version”.") }
-                    items(c.mine, key = { "m${it.id}" }) { r -> RecipeRow(r, listOfNotNull(r.totalMinutes?.let { "$it min" }, r.kcalPerServing?.let { kcal(it) }).joinToString(" · ")) { openRecipe(r.id) } }
+                    recipeItems(c.mine, "m", grid, openRecipe)
                 }
                 shelf == "favorites" -> {
                     if (c.favorites.isEmpty()) item { Empty("♡", "No favorites yet", "Tap the heart on any recipe to keep it here.") }
-                    items(c.favorites, key = { "f${it.id}" }) { r -> RecipeRow(r, listOfNotNull(r.totalMinutes?.let { "$it min" }, r.kcalPerServing?.let { kcal(it) }).joinToString(" · ")) { openRecipe(r.id) } }
+                    recipeItems(c.favorites, "f", grid, openRecipe)
                 }
                 else -> {
                     item {
@@ -176,7 +198,19 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
                         }
                     }
                     if (c.folders.isEmpty()) item { Text("Folders keep recipes together: “Weeknight”, “For guests”… Add recipes to one from the recipe page.", color = C.muted, modifier = Modifier.padding(vertical = 12.dp)) }
-                    items(c.folders.chunked(2), key = { row -> "fo" + row.joinToString { it.id.toString() } }) { row ->
+                    if (!grid) items(c.folders, key = { "fl${it.id}" }) { f ->
+                        Row(Modifier.fillMaxWidth().pressable({ openFolder(f.id) }, 0.98f).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp)).background(C.surfaceAlt), contentAlignment = Alignment.Center) {
+                                if (f.covers.isNotEmpty()) AsyncImage(thumb(f.covers[0], 160), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                else Text("📁", fontSize = 24.sp)
+                            }
+                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                Text(f.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(plural(f.count.toDouble(), "recipe"), color = C.muted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    if (grid) items(c.folders.chunked(2), key = { row -> "fo" + row.joinToString { it.id.toString() } }) { row ->
                         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             row.forEach { f -> FolderTile(f, Modifier.weight(1f)) { openFolder(f.id) } }
                             if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -192,6 +226,18 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
     if (newFolder) NameDialog("New folder", "e.g. Weeknight", "", onDismiss = { newFolder = false }) { name ->
         newFolder = false
         scope.launch { runCatching { app.api.createFolder(name) }; load() }
+    }
+}
+
+/** Recipes as photo cards, two a row (grid), or as rows (list). */
+private fun androidx.compose.foundation.lazy.LazyListScope.recipeItems(list: List<RecipeSummary>, prefix: String, grid: Boolean, openRecipe: (Int) -> Unit) {
+    if (grid) items(list.chunked(2), key = { row -> prefix + "g" + row.joinToString { it.id.toString() } }) { row ->
+        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            row.forEach { r -> RecipeCard(r, Modifier.weight(1f)) { openRecipe(r.id) } }
+            if (row.size == 1) Spacer(Modifier.weight(1f))
+        }
+    } else items(list, key = { prefix + it.id }) { r ->
+        RecipeRow(r, listOfNotNull(r.totalMinutes?.let { "$it min" }, r.kcalPerServing?.let { kcal(it) }).joinToString(" · ")) { openRecipe(r.id) }
     }
 }
 

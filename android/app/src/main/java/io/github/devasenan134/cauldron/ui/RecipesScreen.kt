@@ -248,7 +248,7 @@ fun Chip(text: String, selected: Boolean, icon: Boolean = false, onClick: () -> 
 }
 
 @Composable
-private fun RecipeCard(r: RecipeSummary, modifier: Modifier, onClick: () -> Unit) {
+fun RecipeCard(r: RecipeSummary, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.pressable(onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(24.dp)).background(C.line)) {
             AsyncImage(thumb(r.imageUrl, 480, 480), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())

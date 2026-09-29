@@ -121,17 +121,13 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
     var pickingFood by remember { mutableStateOf<Ingredient?>(null) }
     var adding by remember { mutableStateOf(false) }
     var foldering by remember { mutableStateOf(false) }
-    var copying by remember { mutableStateOf(false) }
     fun toggleFavorite(r: RecipeDetail) {
         store.putRecipe(r.copy(favorite = !r.favorite)) // at once
         scope.launch { runCatching { app.api.setFavorite(r.id, !r.favorite) }.onFailure { store.putRecipe(r); snackbar.showSnackbar(it.friendly()) } }
     }
     fun makeVersion(r: RecipeDetail) {
-        copying = true
-        scope.launch {
-            try { val newId = app.api.makeVariation(r.id); store.recipesChanged(); editNew(newId) }
-            catch (e: Exception) { snackbar.showSnackbar(e.friendly()) } finally { copying = false }
-        }
+        // The editor opens on a copy; the copy is only made when you save it.
+        editNew(r.id)
     }
     val list = rememberLazyListState()
 
@@ -187,9 +183,9 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                         if (r.variations.isNotEmpty()) FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             r.variations.forEach { v -> Chip("✎ ${v.title}", false) { openRecipe(v.id) } }
                         }
-                        OutlinedButton(onClick = { makeVersion(r) }, enabled = !copying, modifier = Modifier.padding(top = 12.dp)) {
+                        OutlinedButton(onClick = { makeVersion(r) }, modifier = Modifier.padding(top = 12.dp)) {
                             Icon(Icons.Outlined.ContentCopy, null, tint = C.ink, modifier = Modifier.size(18.dp))
-                            Text(if (copying) "  Copying…" else "  Make my version", color = C.ink, fontWeight = FontWeight.SemiBold)
+                            Text("  Make my version", color = C.ink, fontWeight = FontWeight.SemiBold)
                         }
                         NutritionCard(r)
                         PrepCard(r, onToggle = { setPrep(r, buildJsonObject { put("is_prep", !r.isPrep) }) }, onWeigh = { weighing = true }, openRecipe = openRecipe)

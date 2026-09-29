@@ -496,11 +496,7 @@ function FolderButton({ r }: { r: Recipe }) {
 }
 
 function MakeVersion({ id }: { id: number }) {
+  // Opens the editor on a copy; the copy is only made when you save it.
   const navigate = useNavigate()
-  const qc = useQueryClient()
-  const copy = useMutation({
-    mutationFn: () => api.makeVariation(id),
-    onSuccess: ({ id: newId }) => { qc.invalidateQueries({ queryKey: ['recipe', id] }); qc.invalidateQueries({ queryKey: ['catalog'] }); navigate(`/recipes/${newId}/edit`) },
-  })
-  return <Button variant="ghost" onClick={() => copy.mutate()} disabled={copy.isPending}>{copy.isPending ? 'Copying…' : '⧉ Make my version'}</Button>
+  return <Button variant="ghost" onClick={() => navigate(`/recipes/new?from=${id}`)}>⧉ Make my version</Button>
 }

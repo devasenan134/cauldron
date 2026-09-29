@@ -174,8 +174,12 @@ Rules:
 - The description often has the exact quantities, ingredient list, servings and macros. When the
   description and the video disagree, trust the description.
 - Write each ingredient's amount the way a recipe would ("200 g", "2 tbsp", "3 cloves", "1 can",
-  "a drizzle", "to taste"). Keep the creator's units. Leave the amount empty only if it's never given
-  and can't be seen.
+  "a drizzle", "to taste"). Keep the creator's units.
+- Every ingredient needs an amount, so the app can count calories. When the creator doesn't give
+  quantities (or servings), write the recipe for 2 servings: set servings to 2 and give each
+  ingredient a sensible amount for 2 portions, judging from what you see in the video (e.g. "300 g",
+  "1 tbsp", "2 cloves"). Set amounts_estimated to true when you did this for any ingredient. Only
+  seasoning to taste (salt, pepper) or garnish may be "to taste".
 - Group ingredients into sections when the recipe has parts ("Marinade", "Sauce", "To serve").
 - Steps: short, clear instructions in order, each with an optional short title.
 - servings: how many portions it makes (a number). total_minutes: the total time if said or clear.
@@ -202,6 +206,7 @@ SCHEMA = {
         "title": {"type": "string", "description": "A short, clear recipe name (not the video's clickbait title)."},
         "description": {"type": "string", "description": "One or two sentences about the dish."},
         "servings": {"type": ["number", "null"]},
+        "amounts_estimated": {"type": "boolean", "description": "True if you estimated any amounts (or the servings) yourself."},
         "yield_text": {"type": ["string", "null"], "description": "Yield as said, e.g. '4 wraps'."},
         "total_minutes": {"type": ["integer", "null"]},
         "category": {"type": ["string", "null"]},
@@ -321,13 +326,23 @@ def save_import(session: Session, job: ImportJob, info: dict, data: dict) -> Rec
     if any(stated.get(k) for k in ("calories", "protein", "carbohydrates", "fat")):
         source_nutrition = {k: stated.get(k) for k in ("calories", "protein", "carbohydrates", "fat") if stated.get(k) is not None}
         source_nutrition |= {"per": stated.get("per") or "serving", "from": "creator"}
+    # Amounts the creator never gave: Gemini estimates them for 2 servings (see PROMPT); where it
+    # still left one blank, its weight guess stands in, so every ingredient counts.
+    servings = data.get("servings") or 2
+    estimated = bool(data.get("amounts_estimated")) or not data.get("servings")
+    for i in data["ingredients"]:
+        if not (i.get("amount") or "").strip() and i.get("grams"):
+            i["amount"] = f"{round(i['grams'])} g"
+            estimated = True
     body = RecipeIn(
         title=(data.get("title") or info.get("title") or "Imported recipe")[:120],
         description=data.get("description") or "",
         image_url=keep_thumbnail(info),
         video_url=job.url,
         source_url=job.url,
-        servings=data.get("servings") or None,
+        servings=servings,
+        notes="Amounts estimated for 2 servings: the video doesn't give them all." if estimated and servings == 2
+              else "Some amounts are estimates: the video doesn't give them all." if estimated else "",
         yield_text=data.get("yield_text") or None,
         total_minutes=data.get("total_minutes") or None,
         cuisine=data.get("cuisine") or None,

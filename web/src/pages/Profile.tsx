@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type FolderSummary, type RecipeSummary } from '../api'
-import { useMe } from '../auth'
+import { api, type FolderSummary, type Me, type RecipeSummary } from '../api'
+import { ME, useMe } from '../auth'
 import { Button, Chip, Empty, Shimmer } from '../components/ui'
 import { addDays, dayLabel, today, weekdayLong, weekStart } from '../dates'
 import { kcal, num, plural, thumb } from '../format'
@@ -17,7 +17,13 @@ export default function Profile() {
   const profile = useQuery({ queryKey: ['profile'], queryFn: api.profile })
   const cooked = useQuery({ queryKey: ['cooked'], queryFn: api.cooked })
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog })
-  const [tab, setTab] = useState<'cooked' | 'catalog'>('cooked')
+  const [tab, setTab] = useState<'cooked' | 'catalog'>('catalog')
+  // Grid or list: saved on your account, so the app shows the same.
+  const view = me?.catalog_view ?? 'grid'
+  const setView = (v: Me['catalog_view']) => {
+    qc.setQueryData<Me | null>(ME, (m) => m && { ...m, catalog_view: v })
+    api.setCatalogView(v).catch(() => qc.invalidateQueries({ queryKey: ME }))
+  }
   const [shelf, setShelf] = useState<'mine' | 'favorites' | 'folders'>('mine')
   const newFolder = useMutation({
     mutationFn: api.createFolder,
@@ -64,7 +70,7 @@ export default function Profile() {
       </div>
 
       <div className="mt-8 flex rounded-full bg-sand p-1 sm:inline-flex">
-        {(['cooked', 'catalog'] as const).map((t) => (
+        {(['catalog', 'cooked'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`press flex-1 rounded-full px-6 py-2 capitalize sm:flex-none ${tab === t ? 'bg-paper font-bold shadow-sm' : 'font-medium text-stone-500'}`}>{t}</button>
         ))}
@@ -85,25 +91,51 @@ export default function Profile() {
         </div>
       ) : (
         <div className="mt-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Chip selected={shelf === 'mine'} onClick={() => setShelf('mine')}>My recipes{c ? ` · ${c.mine.length}` : ''}</Chip>
             <Chip selected={shelf === 'favorites'} onClick={() => setShelf('favorites')}>Favorites{c ? ` · ${c.favorites.length}` : ''}</Chip>
             <Chip selected={shelf === 'folders'} onClick={() => setShelf('folders')}>Folders{c ? ` · ${c.folders.length}` : ''}</Chip>
+            <div className="ml-auto flex rounded-full bg-sand p-1" role="group" aria-label="View">
+              {(['grid', 'list'] as const).map((v) => (
+                <button key={v} onClick={() => setView(v)} aria-pressed={view === v} title={v === 'grid' ? 'Grid' : 'List'}
+                  className={`press grid h-8 w-10 place-items-center rounded-full ${view === v ? 'bg-paper shadow-sm' : 'text-stone-500'}`}>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden>
+                    <path d={v === 'grid' ? 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z' : 'M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z'} />
+                  </svg>
+                </button>
+              ))}
+            </div>
           </div>
           {!c ? <Shimmer className="mt-4 h-20 rounded-2xl" /> : shelf === 'mine' ? (
-            c.mine.length ? c.mine.map((r) => <Row key={r.id} r={r} />)
+            c.mine.length ? <Recipes list={c.mine} view={view} />
               : <Empty emoji="🧑‍🍳" title="No recipes of your own yet" body="Write one, or open any recipe and click “Make my version”."
                   action={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
           ) : shelf === 'favorites' ? (
-            c.favorites.length ? c.favorites.map((r) => <Row key={r.id} r={r} />)
+            c.favorites.length ? <Recipes list={c.favorites} view={view} />
               : <Empty emoji="♡" title="No favorites yet" body="Click the heart on any recipe to keep it here." />
-          ) : (
+          ) : view === 'grid' ? (
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               <button onClick={() => { const n = prompt('New folder name'); if (n?.trim()) newFolder.mutate(n.trim()) }}
                 className="press grid aspect-square place-items-center rounded-3xl border-2 border-dashed border-stone-300 font-semibold text-stone-500 hover:text-ink">
                 ＋ New folder
               </button>
               {c.folders.map((f) => <FolderTile key={f.id} f={f} />)}
+            </div>
+          ) : (
+            <div className="mt-2">
+              {c.folders.map((f) => (
+                <Link key={f.id} to={`/folders/${f.id}`} className="press flex items-center gap-3 rounded-2xl p-2 hover:bg-sand">
+                  <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sand text-2xl">
+                    {f.covers[0] ? <img src={thumb(f.covers[0], 160)} alt="" className="h-full w-full object-cover" /> : '📁'}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{f.name}</span>
+                    <span className="text-sm text-stone-500">{plural(f.count, 'recipe')}</span>
+                  </span>
+                </Link>
+              ))}
+              <button onClick={() => { const n = prompt('New folder name'); if (n?.trim()) newFolder.mutate(n.trim()) }}
+                className="press mt-1 w-full rounded-2xl p-3 text-left font-semibold text-stone-500 hover:bg-sand hover:text-ink">＋ New folder</button>
             </div>
           )}
         </div>
@@ -141,6 +173,27 @@ function Calendar({ days }: { days: Record<string, number> }) {
           return <span key={d} title={`${d}: ${n}`} className={`h-3.5 w-full min-w-2 rounded-[3px] ${cls}`} />
         })}
       </div>
+    </div>
+  )
+}
+
+/** Recipes as photo cards (grid) or rows (list). */
+function Recipes({ list, view }: { list: RecipeSummary[]; view: 'grid' | 'list' }) {
+  if (view === 'list') return <div className="mt-2">{list.map((r) => <Row key={r.id} r={r} />)}</div>
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+      {list.map((r) => (
+        <Link key={r.id} to={`/recipes/${r.id}`} className="press group">
+          <div className="lift relative grid aspect-square place-items-center overflow-hidden rounded-3xl bg-sand">
+            {r.image_url ? <img src={thumb(r.image_url, 480, 480)} alt="" loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              : <span className="text-5xl">🍳</span>}
+            {r.kcal_per_serving ? <span className="absolute bottom-2.5 left-2.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-black">{Math.round(r.kcal_per_serving)} kcal</span> : null}
+            {r.is_prep && <span className="absolute left-2.5 top-2.5 rounded-full bg-ember-bright px-2.5 py-1 text-xs font-bold text-on-go">🫙 Prep</span>}
+          </div>
+          <h3 className="mt-2 line-clamp-2 font-display text-lg font-bold leading-snug">{r.title}</h3>
+          <p className="text-sm text-stone-500">{[r.total_minutes && `${r.total_minutes} min`, r.cuisine].filter(Boolean).join(' · ')}</p>
+        </Link>
+      ))}
     </div>
   )
 }

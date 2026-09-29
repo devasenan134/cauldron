@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
  */
 private sealed interface Page {
     data class Recipe(val id: Int) : Page
-    data class Edit(val id: Int?) : Page // null = a new recipe
+    data class Edit(val id: Int?, val from: Int? = null) : Page // null = a new recipe (from: a copy of that one)
     data class Folder(val id: Int) : Page
     data object Grocery : Page
     data object Settings : Page
@@ -129,14 +129,14 @@ private sealed interface Page {
     data class Food(val id: Int?) : Page // null = a new food of your own
 
     fun save(): String = when (this) {
-        is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"
+        is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}:${from ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"
         Ingredients -> "ingredients"; is Food -> "food:${id ?: ""}"
     }
 
     companion object {
         fun load(s: String): Page? = s.split(":").let { p ->
             when (p[0]) {
-                "recipe" -> Recipe(p[1].toInt()); "edit" -> Edit(p[1].toIntOrNull()); "folder" -> Folder(p[1].toInt())
+                "recipe" -> Recipe(p[1].toInt()); "edit" -> Edit(p[1].toIntOrNull(), p.getOrNull(2)?.toIntOrNull()); "folder" -> Folder(p[1].toInt())
                 "grocery" -> Grocery; "settings" -> Settings; "ingredients" -> Ingredients; "food" -> Food(p[1].toIntOrNull()); else -> null
             }
         }
@@ -334,8 +334,8 @@ private fun AppRoot() {
 private fun PageContent(page: Page, back: () -> Unit, open: (Page) -> Unit, openRecipe: (Int) -> Unit, replace: (Page) -> Unit, toTab: (String) -> Unit) {
     when (page) {
         is Page.Recipe -> RecipeScreen(id = page.id, back = back, openPlan = { toTab(Tabs.PLAN) },
-            edit = { open(Page.Edit(page.id)) }, openRecipe = openRecipe, editNew = { open(Page.Edit(it)) }, openFood = { open(Page.Food(it)) })
-        is Page.Edit -> RecipeEditorScreen(page.id, back = back,
+            edit = { open(Page.Edit(page.id)) }, openRecipe = openRecipe, editNew = { open(Page.Edit(null, from = it)) }, openFood = { open(Page.Food(it)) })
+        is Page.Edit -> RecipeEditorScreen(page.id, from = page.from, back = back,
             saved = { id -> if (page.id == null) replace(Page.Recipe(id)) else back() },
             deleted = { toTab(Tabs.RECIPES) })
         is Page.Folder -> FolderScreen(page.id, back = back, openRecipe = openRecipe)
