@@ -216,8 +216,12 @@ SCHEMA = {
                     "name": {"type": "string"},
                     "amount": {"type": "string", "description": "As written: '200 g', '2 tbsp', 'to taste', or ''."},
                     "note": {"type": "string", "description": "Prep, e.g. 'diced'. Or ''."},
+                    "food": {"type": "string", "description": "Plain grocery name for a nutrition database, no brand: "
+                             "'nonfat evaporated milk', 'light spreadable cheese', 'tomato puree', 'chicken thigh'."},
+                    "grams": {"type": ["number", "null"], "description": "Your best estimate of the weight in grams of the amount "
+                              "used (e.g. 1 wedge of spreadable cheese = 17). Null for water or 'to taste'."},
                 },
-                "required": ["name", "amount", "note"],
+                "required": ["name", "amount", "note", "food", "grams"],
             },
         },
         "steps": {
@@ -329,7 +333,8 @@ def save_import(session: Session, job: ImportJob, info: dict, data: dict) -> Rec
         cuisine=data.get("cuisine") or None,
         category=data.get("category") or None,
         tags=[t for t in data.get("tags") or [] if t][:8],
-        ingredients=[IngredientIn(group=i.get("section") or None, name=i["name"], note=i.get("note") or "", label=i.get("amount") or "")
+        ingredients=[IngredientIn(group=i.get("section") or None, name=i["name"], note=i.get("note") or "", label=i.get("amount") or "",
+                                  food_hint=i.get("food") or None, grams_hint=i.get("grams") or None)
                      for i in data["ingredients"] if i.get("name", "").strip()],
         steps=[StepIn(title=s.get("title") or "", text=s["text"]) for s in data.get("steps") or [] if s.get("text", "").strip()],
     )

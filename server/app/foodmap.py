@@ -345,7 +345,7 @@ FOOD_FOR = {
     "english muffins": "English muffins, plain, enriched, without calcium propionate(includes sourdough)",
     "corn tortillas": "Tortillas, ready-to-bake or -fry, corn", "tortillas": "Tortillas, ready-to-bake or -fry, flour, refrigerated",
     "flour tortillas": "Tortillas, ready-to-bake or -fry, flour, refrigerated", "large 12\" flour tortillas": "Tortillas, ready-to-bake or -fry, flour, refrigerated",
-    "whole wheat tortilla": "Tortillas, ready-to-bake or -fry, flour, refrigerated", "spinach wrap": "Tortillas, ready-to-bake or -fry, flour, refrigerated",
+    "whole wheat tortilla": "Tortillas, ready-to-bake or -fry, whole wheat", "spinach wrap": "Tortillas, ready-to-bake or -fry, flour, refrigerated",
     "keto flour tortillas": "Low-carb tortilla", "high protein flour tortilla wraps": "High-protein tortilla", "high protein tortilla wrap": "High-protein tortilla",
     "tostadas": "Taco shells, baked", "hard taco shell": "Taco shells, baked", "taco shells": "Taco shells, baked",
     "tortilla chips": "Snacks, tortilla chips, plain, white corn, salted", "tortilla strips": "Snacks, tortilla chips, plain, white corn, salted",
