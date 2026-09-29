@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, KCAL_RANGES, type Facets, type RecipeFilter } from '../api'
+import { api, KCAL_RANGES, type Facets, type ImportJob, type RecipeFilter } from '../api'
 import { Button, Chip, Empty, PageHeader, Shimmer } from '../components/ui'
 import { thumb } from '../format'
 import { useDebounced } from '../useDebounced'
@@ -49,6 +49,8 @@ export default function Recipes() {
   const [q, setQ] = useState(filter.q)
   const debouncedQ = useDebounced(q, 300)
   const [panel, setPanel] = useState(false)
+  // ?import=<link> (e.g. shared from another app) opens the import dialog with it.
+  const [importing, setImporting] = useState(() => new URLSearchParams(location.search).has('import'))
   const navigate = useNavigate()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (debouncedQ !== filter.q) setFilter({ ...filter, q: debouncedQ }) }, [debouncedQ])
@@ -60,7 +62,10 @@ export default function Recipes() {
   return (
     <div className="rise">
       <PageHeader title="Recipes" subtitle={recipes.data ? `${recipes.data.length} recipes` : 'Loading…'}
-        actions={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
+        actions={<div className="flex gap-2">
+          <Button variant="ghost" onClick={() => setImporting(true)}>🔗 Import</Button>
+          <Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>
+        </div>} />
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -110,6 +115,7 @@ export default function Recipes() {
         ))}
       </div>
 
+      {importing && <ImportDialog initial={new URLSearchParams(location.search).get('import') ?? ''} onClose={() => setImporting(false)} />}
       {panel && <FilterPanel initial={filter} facets={facets.data} onClose={() => setPanel(false)} onApply={(f) => { setFilter({ ...f, q: filter.q }); setPanel(false) }} />}
     </div>
   )
@@ -166,6 +172,63 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
     <div className="mt-5">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">{title}</p>
       <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  )
+}
+
+const STEPS: [string, string][] = [['queued', 'Waiting its turn'], ['fetching', "Reading the video's page"],
+  ['reading', 'Watching the video and writing the recipe'], ['saving', 'Working out calories']]
+
+/** Import from a YouTube video, a Short or an Instagram Reel; opens the recipe when it's ready. */
+function ImportDialog({ initial, onClose }: { initial: string; onClose: () => void }) {
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [url, setUrl] = useState(initial)
+  const [job, setJob] = useState<ImportJob | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const running = job != null && job.status !== 'done' && job.status !== 'failed'
+
+  const start = async (link: string) => {
+    setError(null)
+    try {
+      let j = await api.startImport(link)
+      setJob(j)
+      while (j.status !== 'done' && j.status !== 'failed') {
+        await new Promise((r) => setTimeout(r, 1500))
+        j = await api.importJob(j.id)
+        setJob(j)
+      }
+      if (j.status === 'done' && j.recipe_id) {
+        qc.invalidateQueries({ queryKey: ['recipes'] })
+        qc.invalidateQueries({ queryKey: ['catalog'] })
+        navigate(`/recipes/${j.recipe_id}`)
+      } else setError(j.message)
+    } catch (e) { setError(String(e).replace(/^Error: POST \/import: \d+ /, '')); setJob(null) }
+  }
+  const step = Math.max(0, STEPS.findIndex(([s]) => s === job?.status))
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => !running && onClose()}>
+      <div className="rise w-full max-w-lg rounded-3xl bg-cream p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-display text-3xl font-extrabold">Import a recipe</h2>
+        <p className="mt-1 text-sm text-stone-500">From a YouTube video, a Short or an Instagram Reel. Cauldron watches it, reads the description for amounts and macros, and writes the recipe.</p>
+        {!running ? (
+          <form className="mt-5 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (url.trim()) start(url.trim()) }}>
+            <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link"
+              className="min-w-0 flex-1 rounded-full bg-paper px-5 py-3 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
+            <Button variant="accent" type="submit" disabled={!url.trim()}>Import</Button>
+          </form>
+        ) : (
+          <div className="mt-5 rounded-2xl bg-paper p-5 ring-1 ring-stone-200">
+            <p className="flex items-center gap-3 font-semibold"><span className="h-4 w-4 animate-spin rounded-full border-2 border-ember-bright border-t-transparent" />{STEPS[step][1]}…</p>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-stone-200">
+              <div className="h-full rounded-full bg-ember-bright transition-[width] duration-500" style={{ width: `${((step + 1) / (STEPS.length + 1)) * 100}%` }} />
+            </div>
+            <p className="mt-3 text-xs text-stone-500">This takes about a minute. You can close this page; it keeps going and shows up in My recipes.</p>
+          </div>
+        )}
+        {error && <p className="mt-4 text-sm font-semibold text-danger">{error}</p>}
+      </div>
     </div>
   )
 }

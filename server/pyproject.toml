@@ -9,4 +9,5 @@ dependencies = [
     "httpx>=0.28.1",
     "sqlmodel>=0.0.47",
     "uvicorn[standard]>=0.54.0",
+    "yt-dlp>=2026.8.19",
 ]

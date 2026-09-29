@@ -17,7 +17,7 @@ def _sqlite_pragmas(conn, _):
 
 
 def init_db() -> None:
-    from . import models  # noqa: F401  (register tables)
+    from . import importer, models  # noqa: F401  (register tables)
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)

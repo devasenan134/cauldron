@@ -10,7 +10,7 @@ from sqlmodel import Session
 
 from .db import engine, init_db
 from .deps import current_user
-from .routes import app_updates, auth, catalog, grocery, images, planner, recipes
+from .routes import app_updates, auth, catalog, grocery, images, imports, planner, recipes
 from .users import claim_placeholder
 
 # Built website (web/dist); served at / when present.
@@ -30,7 +30,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(images.public_router, prefix="/api")
 app.include_router(images.upload_router, prefix="/api")
 # Everything else needs a signed-in user.
-for module in (recipes, planner, grocery, app_updates, catalog):
+for module in (recipes, planner, grocery, app_updates, catalog, imports):
     app.include_router(module.router, prefix="/api", dependencies=[Depends(current_user)])
 
 

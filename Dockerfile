@@ -8,6 +8,8 @@ RUN npm run build
 
 # API server, serving the built website
 FROM python:3.12-slim
+# ffmpeg: yt-dlp joins Instagram's separate video and sound streams with it (recipe imports)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app/server
 COPY server/pyproject.toml server/uv.lock ./

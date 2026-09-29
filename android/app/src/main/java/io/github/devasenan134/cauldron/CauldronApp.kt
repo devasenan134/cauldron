@@ -26,6 +26,9 @@ class CauldronApp : Application() {
     lateinit var store: Store
         private set
 
+    /** A link shared to Cauldron from another app (YouTube, Instagram), waiting to be imported. */
+    val sharedLink = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     override fun onCreate() {
         super.onCreate()
         session = Session(this)

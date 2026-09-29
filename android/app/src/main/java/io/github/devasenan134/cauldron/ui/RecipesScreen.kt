@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -79,7 +80,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit) {
+fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe: () -> Unit) {
     val store = app().store
     var q by rememberSaveable { mutableStateOf("") }
     var filter by remember { mutableStateOf(RecipeFilter()) }
@@ -125,6 +126,12 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit) {
                 }
             }
         }
+        // Import from a video (above) and write your own (below)
+        Box(
+            Modifier.align(Alignment.BottomEnd).padding(end = 26.dp, bottom = LocalBottomSpace.current + 88.dp).size(46.dp)
+                .shadow(10.dp, CircleShape).clip(CircleShape).background(C.surface).pressable(importRecipe, 0.9f),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Default.Link, "Import from a video", tint = C.ink, modifier = Modifier.size(24.dp)) }
         // New recipe
         Box(
             Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = LocalBottomSpace.current + 16.dp).size(58.dp)

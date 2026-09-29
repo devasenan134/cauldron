@@ -380,6 +380,14 @@ private fun NutritionCard(r: RecipeDetail) {
             if (n.perServing != null) Text("Whole recipe: ${kcal(n.total.kcal)}", style = small, color = C.muted, modifier = Modifier.padding(top = 14.dp))
             if (n.leftOut.isNotEmpty()) Text("Not counted (no amount): ${n.leftOut.joinToString()}", style = small, color = C.pinkFg, modifier = Modifier.padding(top = 4.dp))
             if (n.estimated.isNotEmpty()) Text("Estimated: ${n.estimated.joinToString()}", style = small, color = C.faint, modifier = Modifier.padding(top = 4.dp))
+            // What the video's creator says, next to our own count.
+            r.sourceNutrition?.takeIf { it.from == "creator" }?.let { c ->
+                val parts = listOfNotNull(c.calories?.let { "${it.roundToInt()} kcal" }, c.protein?.let { "${it.roundToInt()} g protein" },
+                    c.carbohydrates?.let { "${it.roundToInt()} g carbs" }, c.fat?.let { "${it.roundToInt()} g fat" })
+                Text("The creator says: ${parts.joinToString(" · ")} ${if (c.per == "recipe") "for the whole recipe" else "per serving"}",
+                    style = small, color = C.goText, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth().background(C.goSoft, RoundedCornerShape(12.dp)).padding(10.dp))
+            }
         }
     }
 }

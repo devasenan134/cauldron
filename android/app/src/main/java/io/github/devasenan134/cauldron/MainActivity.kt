@@ -1,5 +1,6 @@
 package io.github.devasenan134.cauldron
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
@@ -54,6 +55,7 @@ import io.github.devasenan134.cauldron.ui.FolderScreen
 import io.github.devasenan134.cauldron.ui.FridgeScreen
 import io.github.devasenan134.cauldron.ui.GroceryScreen
 import io.github.devasenan134.cauldron.ui.HomeScreen
+import io.github.devasenan134.cauldron.ui.ImportSheet
 import io.github.devasenan134.cauldron.ui.LocalBottomSpace
 import io.github.devasenan134.cauldron.ui.LocalOpenSettings
 import io.github.devasenan134.cauldron.ui.LocalRefresh
@@ -71,10 +73,16 @@ import kotlinx.coroutines.launch
 
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        sharedLink(intent)?.let { (application as CauldronApp).sharedLink.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as CauldronApp
+        sharedLink(intent)?.let { app.sharedLink.value = it }
         setContent {
             val state by app.session.state.collectAsState()
             val theme = (state as? Session.State.SignedIn)?.me?.theme ?: "system"
@@ -135,6 +143,11 @@ private class Layer(val page: Page, val key: Long, shown: Boolean) {
     val offset = Animatable(if (shown) 0f else 1f)
 }
 
+/** The link in a "Share → Cauldron" from YouTube or Instagram. */
+private fun sharedLink(intent: Intent?): String? =
+    intent?.takeIf { it.action == Intent.ACTION_SEND }?.getStringExtra(Intent.EXTRA_TEXT)
+        ?.let { Regex("https?://\\S+").find(it)?.value }
+
 private object Tabs {
     const val HOME = "home"; const val RECIPES = "recipes"; const val PLAN = "plan"; const val FRIDGE = "fridge"; const val PROFILE = "profile"
 }
@@ -187,6 +200,8 @@ private fun AppRoot() {
         if (t !in visited) visited = visited + t
     }
     val openRecipe: (Int) -> Unit = { open(Page.Recipe(it)) }
+    var importing by remember { mutableStateOf(false) }
+    val shared by app.sharedLink.collectAsState()
 
     // Back from a tab other than Home: it shrinks away over Home (like Android's own back), then Home.
     val tabBack = remember { Animatable(0f) }
@@ -255,7 +270,7 @@ private fun AppRoot() {
                         holder.SaveableStateProvider("tab:$t") {
                             when (t) {
                                 Tabs.HOME -> HomeScreen(openRecipe = openRecipe, openTab = { goTab(it) }, openGrocery = { open(Page.Grocery) })
-                                Tabs.RECIPES -> RecipesScreen(openRecipe = openRecipe, newRecipe = { open(Page.Edit(null)) })
+                                Tabs.RECIPES -> RecipesScreen(openRecipe = openRecipe, newRecipe = { open(Page.Edit(null)) }, importRecipe = { importing = true })
                                 Tabs.PLAN -> PlannerScreen(openRecipe = openRecipe, openGrocery = { open(Page.Grocery) })
                                 Tabs.FRIDGE -> FridgeScreen(openRecipe = openRecipe)
                                 Tabs.PROFILE -> ProfileScreen(openRecipe = openRecipe, openFolder = { open(Page.Folder(it)) })
@@ -303,6 +318,11 @@ private fun AppRoot() {
             }
         }
     }
+    if (importing || shared != null) ImportSheet(
+        initial = shared,
+        onDismiss = { importing = false; app.sharedLink.value = null },
+        openRecipe = { id -> goTab(Tabs.RECIPES); open(Page.Recipe(id)) },
+    )
 }
 
 @Composable

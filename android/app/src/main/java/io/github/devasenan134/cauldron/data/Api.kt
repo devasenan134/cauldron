@@ -91,6 +91,11 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun makeVariation(recipeId: Int): Int =
         (post<JsonObject>("/recipes/$recipeId/variation", JsonObject(emptyMap()))["id"].toString()).toInt()
 
+    // --- importing from videos
+    suspend fun importStatus(): ImportStatus = get("/import/status")
+    suspend fun startImport(url: String): ImportJob = post("/import", buildJsonObject { put("url", url) })
+    suspend fun importJob(id: Int): ImportJob = get("/import/$id")
+
     // --- grocery templates
     suspend fun templates(): List<GroceryTemplate> = get("/grocery/templates")
     suspend fun saveTemplate(id: Int?, name: String, items: List<TemplateItem>): GroceryTemplate {

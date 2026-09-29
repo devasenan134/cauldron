@@ -156,6 +156,15 @@ function NutritionCard({ r }: { r: Recipe }) {
       {n.per_serving && <p className="mt-4 text-xs text-stone-500">Whole recipe: {kcal(n.total.kcal)}</p>}
       {n.left_out.length > 0 && <p className="mt-1 text-xs text-pink-deep">Not counted (no amount): {n.left_out.join(', ')}</p>}
       {n.estimated.length > 0 && <p className="mt-1 text-xs text-stone-400">Estimated: {n.estimated.join(', ')}</p>}
+      {r.source_nutrition?.from === 'creator' && (
+        <p className="mt-3 rounded-xl bg-ember-soft p-2.5 text-xs font-semibold text-ember">
+          The creator says: {[r.source_nutrition.calories != null && `${Math.round(r.source_nutrition.calories)} kcal`,
+            r.source_nutrition.protein != null && `${Math.round(r.source_nutrition.protein)} g protein`,
+            r.source_nutrition.carbohydrates != null && `${Math.round(r.source_nutrition.carbohydrates)} g carbs`,
+            r.source_nutrition.fat != null && `${Math.round(r.source_nutrition.fat)} g fat`].filter(Boolean).join(' · ')}{' '}
+          {r.source_nutrition.per === 'recipe' ? 'for the whole recipe' : 'per serving'}
+        </p>
+      )}
     </div>
   )
 }

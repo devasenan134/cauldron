@@ -102,8 +102,22 @@ data class Nutrition(
     val estimated: List<String> = emptyList(),
 )
 
+/** Nutrition the source states: Cook Well's (whole recipe), or a video creator's ([per] serving or recipe). */
 @Serializable
-data class SourceNutrition(val calories: Double? = null)
+data class SourceNutrition(
+    val calories: Double? = null,
+    val protein: Double? = null,
+    val carbohydrates: Double? = null,
+    val fat: Double? = null,
+    val per: String? = null,
+    val from: String? = null,
+)
+
+@Serializable
+data class ImportJob(val id: Int, val url: String, val status: String, val message: String = "", val recipeId: Int? = null)
+
+@Serializable
+data class ImportStatus(val ready: Boolean, val instagramCookies: Boolean = false)
 
 @Serializable
 data class RecipeDetail(

@@ -44,7 +44,7 @@ export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
   description: string
   yield_text: string | null
   notes: string
-  source_nutrition: Partial<Record<'calories' | 'protein' | 'fat' | 'carbohydrates', number>> | null
+  source_nutrition: (Partial<Record<'calories' | 'protein' | 'fat' | 'carbohydrates', number>> & { per?: 'serving' | 'recipe'; from?: string }) | null
   ingredients: Ingredient[]
   steps: Step[]
   nutrition: {
@@ -98,6 +98,8 @@ export type FolderSummary = { id: number; name: string; count: number; covers: s
 export type Catalog = { mine: RecipeSummary[]; favorites: RecipeSummary[]; folders: FolderSummary[] }
 export type TemplateItem = { name: string; amount: string; aisle: string }
 export type GroceryTemplate = { id: number; name: string; items: TemplateItem[] }
+
+export type ImportJob = { id: number; url: string; status: string; message: string; recipe_id: number | null }
 
 export type TagGroup = { name: string; tags: string[] }
 export type Facets = { cuisines: string[]; categories: string[]; tag_groups: TagGroup[] }
@@ -205,6 +207,9 @@ export const api = {
   templateFromList: (name: string) => request<GroceryTemplate>('POST', '/grocery/templates/from-list', { name }),
   deleteTemplate: (id: number) => request<{ ok: boolean }>('DELETE', `/grocery/templates/${id}`),
   applyTemplate: (id: number) => request<GroceryItem[]>('POST', `/grocery/templates/${id}/apply`),
+  importStatus: () => request<{ ready: boolean; instagram_cookies: boolean }>('GET', '/import/status'),
+  startImport: (url: string) => request<ImportJob>('POST', '/import', { url }),
+  importJob: (id: number) => request<ImportJob>('GET', `/import/${id}`),
   appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
