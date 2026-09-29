@@ -81,7 +81,6 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
     var tab by rememberSaveable { mutableStateOf("catalog") }
     val grid = me?.catalogView != "list"
     val setView = { v: String -> app.scope.launch { app.setCatalogView(v) }; Unit }
-    var shelf by rememberSaveable { mutableStateOf("mine") } // mine | favorites | folders
     var newFolder by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val open = LocalOpenSettings.current
@@ -162,58 +161,34 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngr
         } else {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                        item { Chip("My recipes" + (catalog?.mine?.size?.let { " · $it" } ?: ""), shelf == "mine") { shelf = "mine" } }
-                        item { Chip("Favorites" + (catalog?.favorites?.size?.let { " · $it" } ?: ""), shelf == "favorites") { shelf = "favorites" } }
-                        item { Chip("Folders" + (catalog?.folders?.size?.let { " · $it" } ?: ""), shelf == "folders") { shelf = "folders" } }
-                    }
-                    // Grid or list (saved on your account, like the website's).
-                    Row(Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(C.surfaceAlt).padding(3.dp)) {
-                        listOf("grid" to Icons.Default.GridView, "list" to Icons.AutoMirrored.Filled.ViewList).forEach { (v, icon) ->
-                            val on = (v == "grid") == grid
-                            Box(Modifier.size(width = 40.dp, height = 34.dp).clip(RoundedCornerShape(50)).background(if (on) C.surface else Color.Transparent)
-                                .clickable { setView(v) }, contentAlignment = Alignment.Center) {
-                                Icon(icon, if (v == "grid") "Grid" else "List", tint = if (on) C.ink else C.muted, modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
+                    Text("Your own recipes are under Recipes → My recipes.", color = C.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    CatalogViewToggle(grid, setView)
                 }
             }
+            // Favorites, your folders, and a new one: tiles (grid) or rows (list). No sub-tabs.
             val c = catalog
-            when {
-                c == null -> item { Shimmer(Modifier.fillMaxWidth().height(80.dp), RoundedCornerShape(20.dp)) }
-                shelf == "mine" -> {
-                    if (c.mine.isEmpty()) item { Empty("🧑‍🍳", "No recipes of your own yet", "Write one from Recipes (+), or open any recipe and tap “Make my version”.") }
-                    recipeItems(c.mine, "m", grid, openRecipe)
-                }
-                shelf == "favorites" -> {
-                    if (c.favorites.isEmpty()) item { Empty("♡", "No favorites yet", "Tap the heart on any recipe to keep it here.") }
-                    recipeItems(c.favorites, "f", grid, openRecipe)
-                }
-                else -> {
-                    item {
-                        Row(Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).border(1.5.dp, C.line, RoundedCornerShape(20.dp))
-                            .pressable({ newFolder = true }, 0.98f).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Add, null, tint = C.ink); Text("  New folder", fontWeight = FontWeight.SemiBold)
-                        }
+            if (c == null) item { Shimmer(Modifier.fillMaxWidth().height(80.dp), RoundedCornerShape(20.dp)) }
+            else {
+                val favorites = FolderSummary(FAVORITES, "♥ Favorites", c.favorites.size, c.favorites.mapNotNull { it.imageUrl }.take(4))
+                val tiles = listOf(favorites) + c.folders + FolderSummary(NEW_FOLDER, "New folder", 0)
+                val open = { f: FolderSummary -> if (f.id == NEW_FOLDER) newFolder = true else openFolder(f.id) }
+                if (grid) items(tiles.chunked(2), key = { row -> "fo" + row.joinToString { it.id.toString() } }) { row ->
+                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { f -> FolderTile(f, Modifier.weight(1f)) { open(f) } }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
-                    if (c.folders.isEmpty()) item { Text("Folders keep recipes together: “Weeknight”, “For guests”… Add recipes to one from the recipe page.", color = C.muted, modifier = Modifier.padding(vertical = 12.dp)) }
-                    if (!grid) items(c.folders, key = { "fl${it.id}" }) { f ->
-                        Row(Modifier.fillMaxWidth().pressable({ openFolder(f.id) }, 0.98f).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp)).background(C.surfaceAlt), contentAlignment = Alignment.Center) {
-                                if (f.covers.isNotEmpty()) AsyncImage(thumb(f.covers[0], 160), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                else Text("📁", fontSize = 24.sp)
-                            }
-                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                                Text(f.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(plural(f.count.toDouble(), "recipe"), color = C.muted, style = MaterialTheme.typography.bodySmall)
+                } else items(tiles, key = { "fl${it.id}" }) { f ->
+                    Row(Modifier.fillMaxWidth().pressable({ open(f) }, 0.98f).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(58.dp).clip(RoundedCornerShape(16.dp)).background(C.surfaceAlt), contentAlignment = Alignment.Center) {
+                            when {
+                                f.id == NEW_FOLDER -> Icon(Icons.Default.Add, null, tint = C.ink)
+                                f.covers.isNotEmpty() -> AsyncImage(thumb(f.covers[0], 160), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                else -> Text(if (f.id == FAVORITES) "♡" else "📁", fontSize = 24.sp)
                             }
                         }
-                    }
-                    if (grid) items(c.folders.chunked(2), key = { row -> "fo" + row.joinToString { it.id.toString() } }) { row ->
-                        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            row.forEach { f -> FolderTile(f, Modifier.weight(1f)) { openFolder(f.id) } }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            Text(f.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (f.id != NEW_FOLDER) Text(plural(f.count.toDouble(), "recipe"), color = C.muted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -309,8 +284,10 @@ fun RecipeRow(r: RecipeSummary, sub: String, onClick: () -> Unit) {
 private fun FolderTile(f: FolderSummary, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.pressable(onClick, 0.97f)) {
         // A 2×2 mosaic of the folder's photos.
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(C.surfaceAlt)) {
-            if (f.covers.isEmpty()) Text("📁", fontSize = 40.sp, modifier = Modifier.align(Alignment.Center))
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(22.dp))
+            .then(if (f.id == NEW_FOLDER) Modifier.border(2.dp, C.line, RoundedCornerShape(22.dp)) else Modifier.background(C.surfaceAlt))) {
+            if (f.id == NEW_FOLDER) Icon(Icons.Default.Add, "New folder", tint = C.muted, modifier = Modifier.size(40.dp).align(Alignment.Center))
+            else if (f.covers.isEmpty()) Text(if (f.id == FAVORITES) "♡" else "📁", fontSize = 40.sp, modifier = Modifier.align(Alignment.Center))
             else Column {
                 f.covers.take(4).chunked(2).forEach { pair ->
                     Row(Modifier.weight(1f)) {
@@ -321,35 +298,71 @@ private fun FolderTile(f: FolderSummary, modifier: Modifier, onClick: () -> Unit
             }
         }
         Text(f.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
-        Text(plural(f.count.toDouble(), "recipe"), color = C.muted, style = MaterialTheme.typography.bodySmall)
+        if (f.id != NEW_FOLDER) Text(plural(f.count.toDouble(), "recipe"), color = C.muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
-/** One folder: its recipes, with rename and delete. */
+/** Folder ids with a special meaning: your favorites (shown like a folder), and the "New folder" tile. */
+const val FAVORITES = -1
+private const val NEW_FOLDER = -2
+
+/** Grid or list (saved on your account, like the website's). */
+@Composable
+fun CatalogViewToggle(grid: Boolean, setView: (String) -> Unit) {
+    Row(Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(C.surfaceAlt).padding(3.dp)) {
+        listOf("grid" to Icons.Default.GridView, "list" to Icons.AutoMirrored.Filled.ViewList).forEach { (v, icon) ->
+            val on = (v == "grid") == grid
+            Box(Modifier.size(width = 40.dp, height = 34.dp).clip(RoundedCornerShape(50)).background(if (on) C.surface else Color.Transparent)
+                .clickable { setView(v) }, contentAlignment = Alignment.Center) {
+                Icon(icon, if (v == "grid") "Grid" else "List", tint = if (on) C.ink else C.muted, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+/** One folder (or your favorites, id [FAVORITES]): its recipes in grid or list, with rename and delete. */
 @Composable
 fun FolderScreen(id: Int, back: () -> Unit, openRecipe: (Int) -> Unit) {
     val app = app()
     val scope = rememberCoroutineScope()
+    val favorites = id == FAVORITES
+    val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
+    val grid = me?.catalogView != "list"
     var folder by remember { mutableStateOf<io.github.devasenan134.cauldron.data.FolderDetail?>(null) }
     var failed by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
-    suspend fun load() { try { folder = app.api.folder(id) } catch (e: Exception) { failed = e.friendly() } }
+    suspend fun load() {
+        try {
+            folder = if (favorites) io.github.devasenan134.cauldron.data.FolderDetail(FAVORITES, "♥ Favorites", app.api.catalog().favorites) else app.api.folder(id)
+        } catch (e: Exception) { failed = e.friendly() }
+    }
     LaunchedEffect(id) { load() }
+    fun remove(recipeId: Int) = scope.launch {
+        runCatching { if (favorites) app.api.setFavorite(recipeId, false) else app.api.setInFolder(id, recipeId, false) }
+        load()
+    }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(folder?.name ?: "Folder", subtitle = folder?.let { plural(it.recipes.size.toDouble(), "recipe") }, back = back) {
-            androidx.compose.material3.TextButton(onClick = { renaming = true }) { Text("Rename", color = C.ink) }
-            androidx.compose.material3.TextButton(onClick = { deleting = true }) { Text("Delete", color = C.danger) }
+        ScreenHeader(folder?.name ?: if (favorites) "Favorites" else "Folder", subtitle = folder?.let { plural(it.recipes.size.toDouble(), "recipe") }, back = back) {
+            CatalogViewToggle(grid) { v -> app.scope.launch { app.setCatalogView(v) } }
+            if (!favorites) {
+                androidx.compose.material3.TextButton(onClick = { renaming = true }) { Text("Rename", color = C.ink) }
+                androidx.compose.material3.TextButton(onClick = { deleting = true }) { Text("Delete", color = C.danger) }
+            }
         }
         LazyColumn(contentPadding = screenPadding(top = 8.dp)) {
             failed?.let { item { Text(it, color = C.danger) } }
             folder?.let { f ->
-                if (f.recipes.isEmpty()) item { Empty("📁", "This folder is empty", "Open a recipe and tap the bookmark to add it here.") }
-                items(f.recipes, key = { it.id }) { r ->
+                if (f.recipes.isEmpty()) item {
+                    if (favorites) Empty("♡", "No favorites yet", "Tap the heart on any recipe to keep it here.")
+                    else Empty("📁", "This folder is empty", "Open a recipe and tap the bookmark to add it here.")
+                }
+                if (grid) recipeItems(f.recipes, "r", true, openRecipe)
+                else items(f.recipes, key = { it.id }) { r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) { RecipeRow(r, listOfNotNull(r.totalMinutes?.let { "$it min" }, r.kcalPerServing?.let { "${it.roundToInt()} kcal" }).joinToString(" · ")) { openRecipe(r.id) } }
-                        androidx.compose.material3.TextButton(onClick = { scope.launch { runCatching { app.api.setInFolder(id, r.id, false) }; load() } }) { Text("Remove", color = C.muted) }
+                        androidx.compose.material3.TextButton(onClick = { remove(r.id) }) { Text(if (favorites) "Unfavorite" else "Remove", color = C.muted) }
                     }
                 }
             }

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type FolderSummary, type Me, type RecipeSummary } from '../api'
 import { ME, useMe } from '../auth'
-import { Button, Chip, Empty, Shimmer } from '../components/ui'
+import { Button, Empty, Shimmer } from '../components/ui'
 import { addDays, dayLabel, today, weekdayLong, weekStart } from '../dates'
 import { kcal, num, plural, thumb } from '../format'
 
@@ -12,19 +12,12 @@ const WEEKS = 20
 /** Your profile, like Cook Well's: who you are, how you've been cooking, then Cooked and Catalog. */
 export default function Profile() {
   const me = useMe().data
-  const navigate = useNavigate()
   const qc = useQueryClient()
   const profile = useQuery({ queryKey: ['profile'], queryFn: api.profile })
   const cooked = useQuery({ queryKey: ['cooked'], queryFn: api.cooked })
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog })
   const [tab, setTab] = useState<'cooked' | 'catalog'>('catalog')
-  // Grid or list: saved on your account, so the app shows the same.
-  const view = me?.catalog_view ?? 'grid'
-  const setView = (v: Me['catalog_view']) => {
-    qc.setQueryData<Me | null>(ME, (m) => m && { ...m, catalog_view: v })
-    api.setCatalogView(v).catch(() => qc.invalidateQueries({ queryKey: ME }))
-  }
-  const [shelf, setShelf] = useState<'mine' | 'favorites' | 'folders'>('mine')
+  const [view, setView] = useCatalogView()
   const newFolder = useMutation({
     mutationFn: api.createFolder,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['catalog'] }),
@@ -91,49 +84,24 @@ export default function Profile() {
         </div>
       ) : (
         <div className="mt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip selected={shelf === 'mine'} onClick={() => setShelf('mine')}>My recipes{c ? ` · ${c.mine.length}` : ''}</Chip>
-            <Chip selected={shelf === 'favorites'} onClick={() => setShelf('favorites')}>Favorites{c ? ` · ${c.favorites.length}` : ''}</Chip>
-            <Chip selected={shelf === 'folders'} onClick={() => setShelf('folders')}>Folders{c ? ` · ${c.folders.length}` : ''}</Chip>
-            <div className="ml-auto flex rounded-full bg-sand p-1" role="group" aria-label="View">
-              {(['grid', 'list'] as const).map((v) => (
-                <button key={v} onClick={() => setView(v)} aria-pressed={view === v} title={v === 'grid' ? 'Grid' : 'List'}
-                  className={`press grid h-8 w-10 place-items-center rounded-full ${view === v ? 'bg-paper shadow-sm' : 'text-stone-500'}`}>
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden>
-                    <path d={v === 'grid' ? 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z' : 'M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z'} />
-                  </svg>
-                </button>
-              ))}
-            </div>
+          {/* Favorites, your folders and a new one: as tiles (grid) or rows (list). */}
+          <div className="flex items-center">
+            <p className="flex-1 text-sm text-stone-500">Your own recipes are under Recipes → My recipes.</p>
+            <ViewToggle view={view} setView={setView} />
           </div>
-          {!c ? <Shimmer className="mt-4 h-20 rounded-2xl" /> : shelf === 'mine' ? (
-            c.mine.length ? <Recipes list={c.mine} view={view} />
-              : <Empty emoji="🧑‍🍳" title="No recipes of your own yet" body="Write one, or open any recipe and click “Make my version”."
-                  action={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
-          ) : shelf === 'favorites' ? (
-            c.favorites.length ? <Recipes list={c.favorites} view={view} />
-              : <Empty emoji="♡" title="No favorites yet" body="Click the heart on any recipe to keep it here." />
-          ) : view === 'grid' ? (
+          {!c ? <Shimmer className="mt-4 h-20 rounded-2xl" /> : view === 'grid' ? (
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              <FolderTile f={{ id: 0, name: '♥ Favorites', count: c.favorites.length, covers: c.favorites.map((r) => r.image_url).filter((u): u is string => !!u).slice(0, 4) }} to="/favorites" />
+              {c.folders.map((f) => <FolderTile key={f.id} f={f} />)}
               <button onClick={() => { const n = prompt('New folder name'); if (n?.trim()) newFolder.mutate(n.trim()) }}
                 className="press grid aspect-square place-items-center rounded-3xl border-2 border-dashed border-stone-300 font-semibold text-stone-500 hover:text-ink">
                 ＋ New folder
               </button>
-              {c.folders.map((f) => <FolderTile key={f.id} f={f} />)}
             </div>
           ) : (
             <div className="mt-2">
-              {c.folders.map((f) => (
-                <Link key={f.id} to={`/folders/${f.id}`} className="press flex items-center gap-3 rounded-2xl p-2 hover:bg-sand">
-                  <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sand text-2xl">
-                    {f.covers[0] ? <img src={thumb(f.covers[0], 160)} alt="" className="h-full w-full object-cover" /> : '📁'}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{f.name}</span>
-                    <span className="text-sm text-stone-500">{plural(f.count, 'recipe')}</span>
-                  </span>
-                </Link>
-              ))}
+              <FolderRow to="/favorites" name="♥ Favorites" count={c.favorites.length} cover={c.favorites.find((r) => r.image_url)?.image_url ?? null} />
+              {c.folders.map((f) => <FolderRow key={f.id} to={`/folders/${f.id}`} name={f.name} count={f.count} cover={f.covers[0] ?? null} />)}
               <button onClick={() => { const n = prompt('New folder name'); if (n?.trim()) newFolder.mutate(n.trim()) }}
                 className="press mt-1 w-full rounded-2xl p-3 text-left font-semibold text-stone-500 hover:bg-sand hover:text-ink">＋ New folder</button>
             </div>
@@ -212,9 +180,49 @@ function Row({ r, sub }: { r: RecipeSummary; sub?: string }) {
   )
 }
 
-function FolderTile({ f }: { f: FolderSummary }) {
+/** Grid or list: saved on your account, so the app shows the same. */
+function useCatalogView(): ['grid' | 'list', (v: 'grid' | 'list') => void] {
+  const qc = useQueryClient()
+  const view = useMe().data?.catalog_view ?? 'grid'
+  const set = (v: Me['catalog_view']) => {
+    qc.setQueryData<Me | null>(ME, (m) => m && { ...m, catalog_view: v })
+    api.setCatalogView(v).catch(() => qc.invalidateQueries({ queryKey: ME }))
+  }
+  return [view, set]
+}
+
+function ViewToggle({ view, setView }: { view: 'grid' | 'list'; setView: (v: 'grid' | 'list') => void }) {
   return (
-    <Link to={`/folders/${f.id}`} className="press lift">
+    <div className="flex rounded-full bg-sand p-1" role="group" aria-label="View">
+      {(['grid', 'list'] as const).map((v) => (
+        <button key={v} onClick={() => setView(v)} aria-pressed={view === v} title={v === 'grid' ? 'Grid' : 'List'}
+          className={`press grid h-8 w-10 place-items-center rounded-full ${view === v ? 'bg-paper shadow-sm' : 'text-stone-500'}`}>
+          <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden>
+            <path d={v === 'grid' ? 'M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z' : 'M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z'} />
+          </svg>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function FolderRow({ to, name, count, cover }: { to: string; name: string; count: number; cover: string | null }) {
+  return (
+    <Link to={to} className="press flex items-center gap-3 rounded-2xl p-2 hover:bg-sand">
+      <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sand text-2xl">
+        {cover ? <img src={thumb(cover, 160)} alt="" className="h-full w-full object-cover" /> : '📁'}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-semibold">{name}</span>
+        <span className="text-sm text-stone-500">{plural(count, 'recipe')}</span>
+      </span>
+    </Link>
+  )
+}
+
+function FolderTile({ f, to }: { f: FolderSummary; to?: string }) {
+  return (
+    <Link to={to ?? `/folders/${f.id}`} className="press lift">
       <div className="grid aspect-square grid-cols-2 grid-rows-2 overflow-hidden rounded-3xl bg-sand">
         {f.covers.length ? f.covers.slice(0, 4).map((u) => <img key={u} src={thumb(u, 240)} alt="" className="h-full w-full object-cover" />)
           : <span className="col-span-2 row-span-2 grid place-items-center text-5xl">📁</span>}
@@ -225,32 +233,46 @@ function FolderTile({ f }: { f: FolderSummary }) {
   )
 }
 
-/** One folder: its recipes, with rename and delete. */
+/** One folder (or your favorites, at /favorites): its recipes, in grid or list. */
 export function Folder() {
-  const id = Number(useParams().id)
+  const param = useParams().id
+  const favorites = param === undefined
+  const id = Number(param)
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const folder = useQuery({ queryKey: ['folder', id], queryFn: () => api.folder(id) })
+  const [view, setView] = useCatalogView()
+  const folder = useQuery({ queryKey: ['folder', id], queryFn: () => api.folder(id), enabled: !favorites })
+  const catalog = useQuery({ queryKey: ['catalog'], queryFn: api.catalog, enabled: favorites })
   const refresh = () => { qc.invalidateQueries({ queryKey: ['folder', id] }); qc.invalidateQueries({ queryKey: ['catalog'] }) }
-  const f = folder.data
+  const f = favorites ? (catalog.data && { id: 0, name: '♥ Favorites', recipes: catalog.data.favorites }) : folder.data
+  const remove = async (recipeId: number) => {
+    if (favorites) await api.setFavorite(recipeId, false)
+    else await api.setInFolder(id, recipeId, false)
+    refresh()
+  }
   return (
-    <div className="rise mx-auto max-w-3xl">
+    <div className="rise mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button onClick={() => navigate(-1)} aria-label="Back" className="press grid h-11 w-11 place-items-center rounded-full bg-paper ring-1 ring-stone-200">←</button>
         <div className="flex-1">
           <p className="text-sm text-stone-500">{f ? plural(f.recipes.length, 'recipe') : ''}</p>
-          <h1 className="font-display text-4xl font-extrabold">{f?.name ?? 'Folder'}</h1>
+          <h1 className="font-display text-4xl font-extrabold">{f?.name ?? (favorites ? 'Favorites' : 'Folder')}</h1>
         </div>
-        <Button variant="ghost" onClick={async () => { const n = prompt('Rename folder', f?.name); if (n?.trim()) { await api.renameFolder(id, n.trim()); refresh() } }}>Rename</Button>
-        <Button variant="ghost" onClick={async () => {
-          if (confirm(`Delete “${f?.name}”? Only the folder goes; its recipes stay.`)) { await api.deleteFolder(id); refresh(); navigate('/profile') }
-        }}>Delete</Button>
+        <ViewToggle view={view} setView={setView} />
+        {!favorites && <>
+          <Button variant="ghost" onClick={async () => { const n = prompt('Rename folder', f?.name); if (n?.trim()) { await api.renameFolder(id, n.trim()); refresh() } }}>Rename</Button>
+          <Button variant="ghost" onClick={async () => {
+            if (confirm(`Delete “${f?.name}”? Only the folder goes; its recipes stay.`)) { await api.deleteFolder(id); refresh(); navigate('/profile') }
+          }}>Delete</Button>
+        </>}
       </div>
-      {f?.recipes.length === 0 && <Empty emoji="📁" title="This folder is empty" body="Open a recipe and click the bookmark to add it here." />}
-      {f?.recipes.map((r) => (
+      {f?.recipes.length === 0 && (favorites
+        ? <Empty emoji="♡" title="No favorites yet" body="Click the heart on any recipe to keep it here." />
+        : <Empty emoji="📁" title="This folder is empty" body="Open a recipe and click the bookmark to add it here." />)}
+      {f && view === 'grid' ? <Recipes list={f.recipes} view="grid" /> : f?.recipes.map((r) => (
         <div key={r.id} className="flex items-center">
           <div className="flex-1"><Row r={r} /></div>
-          <button className="px-3 text-sm font-semibold text-stone-500 hover:text-ink" onClick={async () => { await api.setInFolder(id, r.id, false); refresh() }}>Remove</button>
+          <button className="px-3 text-sm font-semibold text-stone-500 hover:text-ink" onClick={() => remove(r.id)}>{favorites ? 'Unfavorite' : 'Remove'}</button>
         </div>
       ))}
     </div>

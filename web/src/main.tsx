@@ -43,6 +43,7 @@ const router = createBrowserRouter(createRoutesFromElements(
     <Route path="grocery" element={<Grocery />} />
     <Route path="profile" element={<Profile />} />
     <Route path="folders/:id" element={<Folder />} />
+    <Route path="favorites" element={<Folder />} />
     <Route path="settings" element={<Settings />} />
     <Route path="ingredients" element={<Ingredients />} />
     <Route path="ingredients/:id" element={<FoodPage />} />

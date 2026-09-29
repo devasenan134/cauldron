@@ -12,6 +12,22 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class CauldronApp : Application() {
+    /**
+     * "Import to Cauldron" as a direct-share shortcut, so the share sheet in YouTube, Instagram or a
+     * browser shows Cauldron in its top row (as it does WhatsApp chats), not only in the app list.
+     */
+    private fun publishShareShortcut() = runCatching {
+        val shortcut = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "import")
+            .setShortLabel("Import to Cauldron")
+            .setLongLabel("Import the recipe into Cauldron")
+            .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(android.content.Intent(this, MainActivity::class.java).setAction(android.content.Intent.ACTION_SEND).setType("text/plain"))
+            .setCategories(setOf("io.github.devasenan134.cauldron.category.IMPORT_RECIPE"))
+            .setLongLived(true)
+            .build()
+        androidx.core.content.pm.ShortcutManagerCompat.pushDynamicShortcut(this, shortcut)
+    }
+
     /** Lives as long as the app process; for work that must outlast a screen. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -36,6 +52,7 @@ class CauldronApp : Application() {
         grocery = GroceryRepo(api, filesDir)
         updates = Updates(this, api)
         store = Store(api)
+        publishShareShortcut()
         scope.launch {
             session.load()
             // Pick up a changed name or owner status; offline is fine, the saved copy stays.

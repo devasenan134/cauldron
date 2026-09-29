@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Direct share: Cauldron's own target in the top row of the share sheet (like a WhatsApp chat). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="io.github.devasenan134.cauldron.MainActivity">
+        <data android:mimeType="text/plain" />
+        <category android:name="io.github.devasenan134.cauldron.category.IMPORT_RECIPE" />
+    </share-target>
+</shortcuts>
