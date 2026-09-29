@@ -20,6 +20,8 @@ class Store(private val api: Api) {
     val plans: StateFlow<Map<String, Plan>> = _plans
     private val _batches = MutableStateFlow<List<PlanEntry>?>(null)
     val batches: StateFlow<List<PlanEntry>?> = _batches
+    private val _prepStock = MutableStateFlow<List<PrepStock>?>(null)
+    val prepStock: StateFlow<List<PrepStock>?> = _prepStock
 
     fun recipesKey(f: RecipeFilter) = f.toString()
 
@@ -59,15 +61,18 @@ class Store(private val api: Api) {
     }
 
     suspend fun loadBatches() { _batches.value = api.batches() }
+    suspend fun loadPrepStock() { _prepStock.value = api.prepStock() }
+    fun editPrepStock(change: (List<PrepStock>) -> List<PrepStock>) = _prepStock.update { it?.let(change) }
 
     /** The plan changed on the server: every cached week and the fridge may be stale. */
     suspend fun refreshPlans() {
         _plans.value.keys.forEach { runCatching { loadPlan(it) } }
         runCatching { loadBatches() }
+        runCatching { loadPrepStock() }
     }
 
     fun clear() {
         _recipes.value = emptyMap(); _facets.value = null; _recipe.value = emptyMap()
-        _plans.value = emptyMap(); _batches.value = null
+        _plans.value = emptyMap(); _batches.value = null; _prepStock.value = null
     }
 }

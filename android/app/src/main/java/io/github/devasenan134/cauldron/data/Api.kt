@@ -44,7 +44,7 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun recipes(q: String = ""): List<RecipeSummary> = get("/recipes", "q" to q)
     suspend fun recipes(f: RecipeFilter): List<RecipeSummary> = get(
         "/recipes",
-        *(listOf("q" to f.q.trim(), "sort" to f.sort, "mine" to if (f.mine) "true" else "",
+        *(listOf("q" to f.q.trim(), "sort" to f.sort, "mine" to if (f.mine) "true" else "", "prep" to if (f.prep) "true" else "",
             "max_minutes" to (f.maxMinutes?.toString() ?: ""),
             "min_kcal" to (f.kcal?.min?.toString() ?: ""), "max_kcal" to (f.kcal?.max?.toString() ?: "")) +
             f.cuisines.map { "cuisine" to it } + f.categories.map { "category" to it } + f.tags.map { "tag" to it }).toTypedArray(),
@@ -71,6 +71,18 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     /** Set grams and/or food; pass JsonNull to clear. Returns the whole updated recipe. */
     suspend fun patchIngredient(id: Int, patch: JsonObject): RecipeDetail = patch("/ingredients/$id", patch)
     suspend fun foods(q: String): List<Food> = get("/foods", "q" to q)
+    suspend fun setPrep(id: Int, patch: JsonObject): RecipeDetail = patch("/recipes/$id/prep", patch)
+    suspend fun preps(): List<RecipeSummary> = get("/recipes", "prep" to "true")
+
+    // --- ingredients (foods) and their macros
+    suspend fun foodLibrary(): List<Food> = get("/foods/library")
+    suspend fun food(id: Int): Food = get("/foods/$id")
+    suspend fun saveFood(id: Int, body: FoodIn): Food = put("/foods/$id", json.encodeToJsonElement(FoodIn.serializer(), body) as JsonObject)
+    suspend fun addFood(body: FoodIn): Food = post("/foods", json.encodeToJsonElement(FoodIn.serializer(), body) as JsonObject)
+    /** Back to the standard values (or delete a food you added). */
+    suspend fun resetFood(id: Int) { delete<JsonElement>("/foods/$id") }
+    suspend fun unlinked(): List<Unlinked> = get("/foods/unlinked")
+    suspend fun assignFood(id: Int, name: String) { post<JsonElement>("/foods/$id/assign", buildJsonObject { put("name", name) }) }
 
     // --- profile and catalog
     suspend fun profile(): Profile = get("/profile")
@@ -115,6 +127,7 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun updateEntry(id: Int, patch: JsonObject): PlanEntry = patch("/plan/$id", patch)
     suspend fun deleteEntry(id: Int) { delete<JsonElement>("/plan/$id") }
     suspend fun batches(): List<PlanEntry> = get("/batches")
+    suspend fun prepStock(): List<PrepStock> = get("/prep-stock")
 
     // --- grocery
     suspend fun grocery(): List<GroceryItem> = get("/grocery")

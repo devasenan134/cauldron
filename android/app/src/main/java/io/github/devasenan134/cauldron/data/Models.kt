@@ -22,6 +22,8 @@ data class RecipeSummary(
     val servings: Double? = null,
     val tags: List<String> = emptyList(),
     val kcalPerServing: Double? = null,
+    /** A prepped ingredient (cooked rice, a sauce) that other recipes use by weight. */
+    val isPrep: Boolean = false,
 )
 
 @Serializable
@@ -39,10 +41,11 @@ data class RecipeFilter(
     val maxMinutes: Int? = null,
     val kcal: KcalRange? = null,
     val mine: Boolean = false,
+    val prep: Boolean = false,
     val sort: String = "title",
 ) {
     /** How many filters are on (the search box and sort don't count). */
-    val count get() = cuisines.size + categories.size + tags.size + listOfNotNull(maxMinutes, kcal).size + (if (mine) 1 else 0)
+    val count get() = cuisines.size + categories.size + tags.size + listOfNotNull(maxMinutes, kcal).size + (if (mine) 1 else 0) + (if (prep) 1 else 0)
 }
 
 enum class KcalRange(val label: String, val min: Int?, val max: Int?) {
@@ -51,7 +54,7 @@ enum class KcalRange(val label: String, val min: Int?, val max: Int?) {
 
 // A recipe of your own, as sent to the server (same shape as the library's).
 @Serializable
-data class IngredientIn(val group: String? = null, val name: String, val note: String = "", val label: String = "")
+data class IngredientIn(val group: String? = null, val name: String, val note: String = "", val label: String = "", val prepId: Int? = null)
 
 @Serializable
 data class StepIn(val title: String = "", val text: String)
@@ -70,6 +73,8 @@ data class RecipeIn(
     val category: String? = null,
     val tags: List<String> = emptyList(),
     val notes: String = "",
+    val isPrep: Boolean = false,
+    val yieldGrams: Double? = null,
     val ingredients: List<IngredientIn> = emptyList(),
     val steps: List<StepIn> = emptyList(),
 )
@@ -88,6 +93,11 @@ data class Ingredient(
     val aisle: String? = null,
     val foodId: Int? = null,
     val foodName: String? = null,
+    /** Counted with your own version of the food. */
+    val foodEdited: Boolean = false,
+    /** Made from this prepped-ingredient recipe instead of a food. */
+    val prepId: Int? = null,
+    val prepTitle: String? = null,
     val nutrition: Macros? = null,
 )
 
@@ -100,6 +110,10 @@ data class Nutrition(
     val perServing: Macros? = null,
     val leftOut: List<String> = emptyList(),
     val estimated: List<String> = emptyList(),
+    val grams: Double = 0.0,
+    /** A prep: what it weighs when done, and per 100 g. */
+    val yieldGrams: Double? = null,
+    val per100g: Macros? = null,
 )
 
 /** Nutrition the source states: Cook Well's (whole recipe), or a video creator's ([per] serving or recipe). */
@@ -146,13 +160,79 @@ data class RecipeDetail(
     val parentId: Int? = null,
     val parentTitle: String? = null,
     val variations: List<RecipeRef> = emptyList(),
+    val isPrep: Boolean = false,
+    val yieldGrams: Double? = null,
+    /** A prep: your recipes that use it. */
+    val usedIn: List<RecipeRef> = emptyList(),
 ) {
     /** Your own recipe (not the shared library): you can rewrite or delete it. */
     val isMine get() = canEdit && source != "cookwell"
 }
 
+/** A food per 100 g, as you see it: your own version when you've edited it ([edited]), or one you added ([own]). */
 @Serializable
-data class Food(val id: Int, val name: String, val source: String, val kcal: Double, val protein: Double, val fat: Double, val carbs: Double)
+data class Food(
+    val id: Int,
+    val name: String,
+    val source: String = "",
+    val brand: String = "",
+    val notes: String = "",
+    val kcal: Double = 0.0,
+    val protein: Double = 0.0,
+    val fat: Double = 0.0,
+    val carbs: Double = 0.0,
+    val fiber: Double? = null,
+    val sugar: Double? = null,
+    val sodiumMg: Double? = null,
+    val edited: Boolean = false,
+    val own: Boolean = false,
+    /** recipes you can see that use it, and what they call it (library and detail only) */
+    val recipes: Int = 0,
+    val names: List<String> = emptyList(),
+    /** detail only: the standard values when you have your own version, and where it's used */
+    val default: Map<String, kotlinx.serialization.json.JsonElement>? = null,
+    val usedIn: List<RecipeRef> = emptyList(),
+)
+
+@Serializable
+data class FoodIn(
+    val name: String,
+    val brand: String = "",
+    val notes: String = "",
+    val kcal: Double = 0.0,
+    val protein: Double = 0.0,
+    val fat: Double = 0.0,
+    val carbs: Double = 0.0,
+    val fiber: Double? = null,
+    val sugar: Double? = null,
+    val sodiumMg: Double? = null,
+)
+
+/** An ingredient name with no food, so it adds nothing (in recipes you can edit). */
+@Serializable
+data class Unlinked(val name: String, val count: Int, val recipes: List<RecipeRef> = emptyList())
+
+@Serializable
+data class PrepUse(val entryId: Int, val day: String? = null, val title: String = "", val grams: Double)
+
+/** A prep you made or will make: what's in the fridge now, and what's spare after the planned meals. */
+@Serializable
+data class PrepStock(
+    val entryId: Int,
+    val recipeId: Int,
+    val title: String,
+    val imageUrl: String? = null,
+    val day: String? = null,
+    val madeGrams: Double,
+    val discarded: Double = 0.0,
+    val gramsNow: Double = 0.0,
+    val gramsLeft: Double = 0.0,
+    val kcalPer100g: Double? = null,
+    val uses: List<PrepUse> = emptyList(),
+)
+
+@Serializable
+data class Shortfall(val prepId: Int, val title: String = "", val grams: Double)
 
 @Serializable
 data class PlanEntry(
@@ -173,6 +253,12 @@ data class PlanEntry(
     val discarded: Double = 0.0,
     /** the batch this leftover meal eats from */
     val leftoverOf: Int? = null,
+    /** makes a prepped ingredient (madeGrams of it); nothing is eaten here */
+    val isPrep: Boolean = false,
+    val madeGrams: Double? = null,
+    val gramsLeft: Double? = null,
+    /** preps this meal needs that nothing planned covers (the grocery list buys their ingredients) */
+    val short: List<Shortfall> = emptyList(),
 ) {
     val isBatch get() = cookPortions != null
     val isLeftover get() = leftoverOf != null

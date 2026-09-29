@@ -212,6 +212,11 @@ private class PlanActions(
         send(e, buildJsonObject { put("cook_portions", c?.let { JsonPrimitive(it) } ?: JsonNull) })
     }
 
+    fun setMade(e: PlanEntry, g: Double) {
+        app.store.editEntry(e.id) { it.copy(madeGrams = g, gramsLeft = (it.gramsLeft ?: 0.0) + g - (it.madeGrams ?: 0.0)) }
+        send(e, buildJsonObject { put("made_grams", g) })
+    }
+
     fun reorder(e: PlanEntry, position: Int) = send(e, buildJsonObject { put("day", e.day?.let { JsonPrimitive(it) } ?: JsonNull); put("position", position) })
 
     fun remove(e: PlanEntry) {
@@ -348,13 +353,16 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
             Text(e.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
+                    e.isPrep -> Pill("🫙 Prep · ${(e.madeGrams ?: 0.0).roundToInt()} g", color = C.goText, background = C.goSoft)
                     e.isLeftover -> Pill("Leftovers", color = C.blueFg, background = C.blueBg)
                     e.isBatch -> Pill("Batch · ${num(e.cookPortions ?: 0.0)}", color = C.purpleFg, background = C.purpleBg)
                 }
-                Text((if (e.isLeftover || e.isBatch) "  " else "") + listOfNotNull(
+                if (!e.isPrep) Text((if (e.isLeftover || e.isBatch) "  " else "") + listOfNotNull(
                     if (e.servings != 1.0) plural(e.servings, "serving") else null, e.kcal?.let { kcal(it) }).joinToString(" · "),
                     color = C.muted, style = MaterialTheme.typography.bodySmall)
             }
+            if (e.short.isNotEmpty()) Text("Needs ${shortText(e)}: buying the ingredients", color = C.pinkFg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${e.title}", tint = C.muted) }
@@ -362,9 +370,9 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
                 DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
                 if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                 if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
-                DropdownMenuItem(text = { Text("Eat one more") }, onClick = { menu = false; a.setServings(e, e.servings + 1) })
-                if (e.servings > 1) DropdownMenuItem(text = { Text("Eat one less") }, onClick = { menu = false; a.setServings(e, e.servings - 1) })
-                if (!e.isLeftover && e.recipeId != null) {
+                if (!e.isPrep) DropdownMenuItem(text = { Text("Eat one more") }, onClick = { menu = false; a.setServings(e, e.servings + 1) })
+                if (!e.isPrep && e.servings > 1) DropdownMenuItem(text = { Text("Eat one less") }, onClick = { menu = false; a.setServings(e, e.servings - 1) })
+                if (!e.isLeftover && !e.isPrep && e.recipeId != null) {
                     if (e.isBatch) DropdownMenuItem(text = { Text("Not a batch") }, onClick = { menu = false; a.setCook(e, null) })
                     else DropdownMenuItem(text = { Text("Batch cook") }, onClick = { menu = false; a.setCook(e, e.servings + 3) })
                 }
@@ -442,8 +450,61 @@ private fun AddMealButton(onClick: () -> Unit) {
     }
 }
 
+private fun shortText(e: PlanEntry) = e.short.joinToString { "${it.grams.roundToInt()} g ${it.title.lowercase()}" }
+
+/** Nothing planned makes enough of a prep this meal uses: the grocery list buys its ingredients. */
+@Composable
+private fun Shortfall(e: PlanEntry) {
+    if (e.short.isEmpty()) return
+    Text("Needs ${shortText(e)}: nothing planned makes enough, so the grocery list buys the ingredients.",
+        color = C.pinkFg, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().background(C.pinkBg, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp))
+}
+
+/** Making a prepped ingredient: by weight, and it all goes to the fridge. */
+@Composable
+private fun PrepCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier) {
+    var menu by remember { mutableStateOf(false) }
+    var weighing by remember { mutableStateOf(false) }
+    Surface(color = C.goSoft, contentColor = C.ink, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(thumb(e.imageUrl, 200), null, contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(C.surface)
+                        .then(if (e.recipeId != null) Modifier.pressable({ a.openRecipe(e.recipeId) }) else Modifier))
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text("🫙 PREP", color = C.goText, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                    Text(e.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = if (e.recipeId != null) Modifier.clickable { a.openRecipe(e.recipeId) } else Modifier)
+                }
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${e.title}") }
+                    DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
+                        if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
+                        if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
+                        DropdownMenuItem(text = { Text("Remove", color = C.danger) }, onClick = { menu = false; a.remove(e) })
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("makes ${(e.madeGrams ?: 0.0).roundToInt()} g", fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(C.surface).clickable { weighing = true }.padding(horizontal = 12.dp, vertical = 8.dp))
+                Spacer(Modifier.weight(1f))
+                val left = e.gramsLeft ?: 0.0
+                Text(if (left < 1) "all used by your plan" else "${left.roundToInt()} g spare", color = if (left < 1) C.muted else C.goText,
+                    fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+            }
+            Shortfall(e)
+        }
+    }
+    if (weighing) WeightDialog("How much are you making?", "Meals that use ${e.title.lowercase()} take from this, oldest first.", e.madeGrams,
+        onDismiss = { weighing = false }) { g -> weighing = false; if (g != null) a.setMade(e, g) }
+}
+
 @Composable
 private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Boolean, index: Int, modifier: Modifier) {
+    if (e.isPrep) return PrepCard(e, a, canUp, canDown, index, modifier)
     var menu by remember { mutableStateOf(false) }
     val accent = when { e.isLeftover -> C.blueFg; e.isBatch -> C.purpleFg; else -> C.ink }
     Surface(color = C.surface, shape = RoundedCornerShape(24.dp), modifier = modifier.fillMaxWidth().animateContentSize()) {
@@ -487,6 +548,7 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
                     modifier = Modifier.padding(top = 8.dp).fillMaxWidth().background(C.purpleBg, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
+            Shortfall(e)
         }
     }
 }

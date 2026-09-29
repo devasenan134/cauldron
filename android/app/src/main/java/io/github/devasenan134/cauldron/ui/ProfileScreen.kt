@@ -63,7 +63,7 @@ import kotlin.math.roundToInt
 /** Your profile, like Cook Well's: who you are, how you've been cooking, then Cooked and Catalog. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit) {
+fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit, openIngredients: () -> Unit = {}) {
     val app = app()
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
     val update by app.updates.available.collectAsState()
@@ -86,6 +86,11 @@ fun ProfileScreen(openRecipe: (Int) -> Unit, openFolder: (Int) -> Unit) {
     Column(Modifier.fillMaxSize()) {
     // The same header as every other tab (it keeps clear of the status bar).
     ScreenHeader("Profile", subtitle = "Your cooking and catalog") {
+        // Ingredients and their macros (edit a food and every recipe follows).
+        Row(Modifier.padding(end = 8.dp).clip(RoundedCornerShape(50)).background(C.surface).border(1.dp, C.line, RoundedCornerShape(50))
+            .pressable(openIngredients).padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("🥕 Ingredients", fontWeight = FontWeight.SemiBold, color = C.ink)
+        }
         BadgedBox(badge = { if (update != null) Badge(containerColor = C.go) }) {
             FloatingCircle(open) { Icon(Icons.Outlined.Settings, "Settings", tint = C.ink) }
         }

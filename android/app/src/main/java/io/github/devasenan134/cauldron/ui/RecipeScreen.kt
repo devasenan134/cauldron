@@ -109,7 +109,8 @@ private val SOURCE_NOTE = mapOf(
 private val HERO = 380.dp
 
 @Composable
-fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Unit, openRecipe: (Int) -> Unit = {}, editNew: (Int) -> Unit = {}) {
+fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Unit, openRecipe: (Int) -> Unit = {}, editNew: (Int) -> Unit = {},
+                 openFood: (Int) -> Unit = {}) {
     val app = app()
     val store = app.store
     val scope = rememberCoroutineScope()
@@ -135,8 +136,12 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
     val list = rememberLazyListState()
 
     fun patch(ing: Ingredient, body: JsonObject) = scope.launch {
-        try { store.putRecipe(app.api.patchIngredient(ing.id, body)) } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
+        try { store.putRecipe(app.api.patchIngredient(ing.id, body)); store.recipesChanged() } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
     }
+    fun setPrep(r: RecipeDetail, body: JsonObject) = scope.launch {
+        try { store.putRecipe(app.api.setPrep(r.id, body)); store.recipesChanged(); store.refreshPlans() } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
+    }
+    var weighing by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         Loaded(load, retry, loading = { RecipeSkeleton() }) { r ->
@@ -163,6 +168,7 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                     ) {
                         Text(r.title, style = MaterialTheme.typography.headlineMedium)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
+                            if (r.isPrep) Pill("🫙 Prepped ingredient", color = C.onGo, background = C.go)
                             r.totalMinutes?.let { Meta(Icons.Default.Schedule, "$it min") }
                             (r.yieldText ?: r.servings?.let { plural(it, "serving") })?.let { Meta(Icons.Default.Restaurant, it) }
                             r.cuisine?.let { Pill(it, background = C.surface) }
@@ -186,12 +192,13 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                             Text(if (copying) "  Copying…" else "  Make my version", color = C.ink, fontWeight = FontWeight.SemiBold)
                         }
                         NutritionCard(r)
+                        PrepCard(r, onToggle = { setPrep(r, buildJsonObject { put("is_prep", !r.isPrep) }) }, onWeigh = { weighing = true }, openRecipe = openRecipe)
                     }
                 }
                 item {
                     Column(Modifier.offset(y = (-32).dp).padding(horizontal = 20.dp)) {
                         SectionLabel("Ingredients") { Text("${r.ingredients.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold) }
-                        if (r.canEdit) Text("Tap a weight to correct it, or a food to change what it's counted as.",
+                        if (r.canEdit) Text("Tap a weight to correct it, or ⇄ to change what it's counted as (a food, or one of your preps). Tap a food to see or edit its macros.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                         groups.forEach { (group, ings) ->
                             if (group.isNotEmpty()) Text(group.uppercase(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
@@ -200,7 +207,8 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                                 Column {
                                     ings.forEachIndexed { i, ing ->
                                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 14.dp))
-                                        IngredientRow(ing, r.canEdit, onGrams = { editing = ing }, onFood = { pickingFood = ing })
+                                        IngredientRow(ing, r.canEdit, onGrams = { editing = ing }, onFood = { pickingFood = ing },
+                                            openFood = openFood, openPrep = openRecipe)
                                     }
                                 }
                             }
@@ -229,9 +237,12 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                 Button(
                     onClick = { adding = true }, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo),
                     modifier = Modifier.fillMaxWidth().height(58.dp).shadow(12.dp, RoundedCornerShape(50), spotColor = C.ink),
-                ) { Text("Add to plan", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                ) { Text(if (r.isPrep) "Make it" else "Add to plan", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
             }
-            if (adding) AddToPlanSheet(r, onDismiss = { adding = false }) { msg, ok ->
+            if (adding && r.isPrep) MakePrepSheet(r, onDismiss = { adding = false }) { msg, ok ->
+                adding = false
+                scope.launch { snackbar.showSnackbar(msg) }
+            } else if (adding) AddToPlanSheet(r, onDismiss = { adding = false }) { msg, ok ->
                 adding = false
                 scope.launch {
                     val res = snackbar.showSnackbar(msg, actionLabel = if (ok) "Open plan" else null)
@@ -273,9 +284,17 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
         }
     }
     pickingFood?.let { ing ->
-        FoodSheet(ing.name, onDismiss = { pickingFood = null }) { food ->
+        FoodSheet(ing.name, onDismiss = { pickingFood = null }, recipeId = id, isPrep = ing.prepId != null,
+            onPickPrep = { prepId -> pickingFood = null; patch(ing, buildJsonObject { put("prep_id", prepId?.let { JsonPrimitive(it) } ?: JsonNull) }) }) { food ->
             pickingFood = null
             patch(ing, buildJsonObject { put("food_id", food.id) })
+        }
+    }
+    if (weighing) recipe?.let { r ->
+        WeightDialog("Weighs when done", "Left empty, it's what the ingredients weigh (${r.nutrition.grams.roundToInt()} g). Rice and pasta gain water, sauces lose it: weigh it once for better numbers.",
+            r.yieldGrams, onDismiss = { weighing = false }) { g ->
+            weighing = false
+            setPrep(r, buildJsonObject { put("yield_grams", g?.let { JsonPrimitive(it) } ?: JsonNull) })
         }
     }
     if (foldering) recipe?.let { r -> FolderSheet(r, onDismiss = { foldering = false }) { store.putRecipe(it) } }
@@ -351,10 +370,13 @@ private fun Links(r: RecipeDetail) {
 @Composable
 private fun NutritionCard(r: RecipeDetail) {
     val n = r.nutrition
-    val m = n.perServing ?: n.total
+    // A prep is used by weight, so it's shown per 100 g.
+    val per100 = n.per100g.takeIf { r.isPrep }
+    val m = per100 ?: n.perServing ?: n.total
     Surface(color = C.surface, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, C.line), modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
         Column(Modifier.padding(20.dp)) {
-            Text((if (n.perServing != null) "Per serving · recipe makes ${num(r.servings ?: 1.0)}" else "Whole recipe").uppercase(),
+            Text((if (per100 != null) "Per 100 g · makes about ${(n.yieldGrams ?: 0.0).roundToInt()} g"
+                else if (n.perServing != null) "Per serving · recipe makes ${num(r.servings ?: 1.0)}" else "Whole recipe").uppercase(),
                 color = C.muted, style = MaterialTheme.typography.labelMedium, letterSpacing = 0.6.sp)
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("${m.kcal.roundToInt()}", color = C.ink, style = MaterialTheme.typography.displaySmall)
@@ -377,7 +399,7 @@ private fun NutritionCard(r: RecipeDetail) {
                 Macro("Fat", m.fat, FatColor, Modifier.weight(1f))
             }
             val small = MaterialTheme.typography.bodySmall
-            if (n.perServing != null) Text("Whole recipe: ${kcal(n.total.kcal)}", style = small, color = C.muted, modifier = Modifier.padding(top = 14.dp))
+            if (n.perServing != null || per100 != null) Text("Whole recipe: ${kcal(n.total.kcal)}" + (if (per100 != null && n.perServing != null) " · ${kcal(n.perServing.kcal)} per serving" else ""), style = small, color = C.muted, modifier = Modifier.padding(top = 14.dp))
             if (n.leftOut.isNotEmpty()) Text("Not counted (no amount): ${n.leftOut.joinToString()}", style = small, color = C.pinkFg, modifier = Modifier.padding(top = 4.dp))
             if (n.estimated.isNotEmpty()) Text("Estimated: ${n.estimated.joinToString()}", style = small, color = C.faint, modifier = Modifier.padding(top = 4.dp))
             // What the video's creator says, next to our own count.
@@ -471,13 +493,24 @@ fun StepperCard(label: String, unit: String, value: Double, onChange: (Double) -
 }
 
 @Composable
-private fun IngredientRow(ing: Ingredient, editable: Boolean, onGrams: () -> Unit, onFood: () -> Unit) {
+private fun IngredientRow(ing: Ingredient, editable: Boolean, onGrams: () -> Unit, onFood: () -> Unit, openFood: (Int) -> Unit, openPrep: (Int) -> Unit) {
     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(buildString { append(ing.name); if (ing.note.isNotBlank()) append(", ${ing.note}") }, fontWeight = FontWeight.SemiBold)
             if (ing.label.isNotBlank()) Text(ing.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(ing.foodName ?: "no food linked", style = MaterialTheme.typography.labelSmall, color = C.muted.copy(alpha = 0.7f),
-                modifier = if (editable) Modifier.clickable(onClick = onFood) else Modifier)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val small = MaterialTheme.typography.labelSmall
+                when {
+                    ing.prepId != null -> Text("🫙 ${ing.prepTitle}", style = small, color = C.goText, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f, fill = false).clickable { openPrep(ing.prepId) })
+                    ing.foodId != null -> Text(ing.foodName.orEmpty() + if (ing.foodEdited) " · yours" else "", style = small,
+                        color = if (ing.foodEdited) C.goText else C.muted.copy(alpha = 0.7f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).clickable { openFood(ing.foodId) })
+                    else -> Text("no food linked", style = small, color = C.purpleFg)
+                }
+                if (editable) Text("⇄", color = C.muted, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(CircleShape).clickable(onClick = onFood).padding(horizontal = 8.dp, vertical = 2.dp))
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -530,30 +563,167 @@ private fun GramsDialog(ing: Ingredient, onDismiss: () -> Unit, onSave: (Double?
     )
 }
 
+/** Pick what an ingredient is counted as: a food, or (with [onPickPrep]) one of your prepped ingredients. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FoodSheet(initial: String, onDismiss: () -> Unit, onPick: (Food) -> Unit) {
+fun FoodSheet(initial: String, onDismiss: () -> Unit, recipeId: Int? = null, isPrep: Boolean = false,
+              onPickPrep: ((Int?) -> Unit)? = null, onPick: (Food) -> Unit) {
     val app = app()
     var q by remember { mutableStateOf(initial) }
     var foods by remember { mutableStateOf<List<Food>?>(null) }
+    var tab by remember { mutableStateOf(if (isPrep) "preps" else "foods") }
+    var preps by remember { mutableStateOf<List<io.github.devasenan134.cauldron.data.RecipeSummary>?>(null) }
     LaunchedEffect(q) {
         delay(250)
         foods = if (q.isBlank()) emptyList() else runCatching { app.api.foods(q) }.getOrNull()
     }
+    LaunchedEffect(tab) { if (tab == "preps" && preps == null) preps = runCatching { app.api.preps() }.getOrDefault(emptyList()).filter { it.id != recipeId } }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
         Text("What is it counted as?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 20.dp))
+        if (onPickPrep != null) Row(Modifier.padding(start = 20.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Foods", tab == "foods") { tab = "foods" }
+            Chip("🫙 Prepped", tab == "preps") { tab = "preps" }
+        }
+        if (tab == "preps" && onPickPrep != null) LazyColumn(Modifier.height(460.dp).padding(top = 12.dp)) {
+            items(preps.orEmpty(), key = { it.id }) { p ->
+                Text("🫙  ${p.title}", fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().clickable { onPickPrep(p.id) }.padding(horizontal = 20.dp, vertical = 14.dp))
+            }
+            if (preps?.isEmpty() == true) item {
+                Text("No prepped ingredients yet. Open a recipe like cooked rice and switch on “Prepped ingredient”.", color = C.muted, modifier = Modifier.padding(20.dp))
+            }
+            if (isPrep) item {
+                Text("Not a prep: count it as a food", color = C.muted, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.fillMaxWidth().clickable { onPickPrep(null) }.padding(horizontal = 20.dp, vertical = 14.dp))
+            }
+            item { Spacer(Modifier.height(32.dp)) }
+        } else {
         SearchPill(q, { q = it }, Modifier.padding(20.dp), placeholder = "Search foods")
         LazyColumn(Modifier.height(460.dp)) {
             items(foods.orEmpty(), key = { it.id }) { f ->
                 Row(Modifier.fillMaxWidth().clickable { onPick(f) }.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    Text(f.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(f.name + if (f.edited || f.own) " · yours" else "", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Text("${f.kcal.roundToInt()} kcal/100 g", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
                 }
             }
             if (foods?.isEmpty() == true && q.isNotBlank()) item {
-                Text("No match. Try fewer words.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
+                Text("No match. Try fewer words, or add it as your own food under Profile → Ingredients.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
             }
             item { Spacer(Modifier.height(32.dp)) }
+        }
+        }
+    }
+}
+
+/** Prepped ingredient: switch it on (compact) or, once on, what it weighs when done and what uses it. */
+@Composable
+private fun PrepCard(r: RecipeDetail, onToggle: () -> Unit, onWeigh: () -> Unit, openRecipe: (Int) -> Unit) {
+    if (!r.canEdit && !r.isPrep) return
+    if (!r.isPrep) {
+        Row(Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.surface).pressable(onToggle, 0.98f).padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("🫙", fontSize = 22.sp)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text("Use as a prepped ingredient", fontWeight = FontWeight.SemiBold)
+                Text("Cooked rice, pickles, a sauce: other recipes use it by weight, and you track it in the fridge.", style = MaterialTheme.typography.bodySmall, color = C.muted)
+            }
+            androidx.compose.material3.Switch(checked = false, onCheckedChange = { onToggle() })
+        }
+        return
+    }
+    Surface(color = C.goSoft, contentColor = C.ink, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🫙 Prepped ingredient", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                if (r.canEdit) androidx.compose.material3.Switch(checked = true, onCheckedChange = { onToggle() },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.go, checkedThumbColor = C.onGo))
+            }
+            Text("Other recipes can use this by weight (write e.g. “150 g ${r.title.lowercase()}”). What you make goes in the fridge, and meals that use it take from there.",
+                style = MaterialTheme.typography.bodySmall, color = C.muted, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Weighs when done", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("${(r.nutrition.yieldGrams ?: 0.0).roundToInt()} g" + if (r.yieldGrams == null) " (auto)" else "", fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.surface).then(if (r.canEdit) Modifier.clickable(onClick = onWeigh) else Modifier)
+                        .padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+            if (r.usedIn.isNotEmpty()) {
+                Text("USED IN", style = MaterialTheme.typography.labelMedium, color = C.muted, letterSpacing = 0.6.sp, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    r.usedIn.forEach { u -> Chip(u.title, false) { openRecipe(u.id) } }
+                }
+            }
+        }
+    }
+}
+
+/** A weight in grams, or empty for "work it out". */
+@Composable
+fun WeightDialog(title: String, note: String, initial: Double?, onDismiss: () -> Unit, onSave: (Double?) -> Unit) {
+    var text by remember { mutableStateOf(initial?.let { num(it) } ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(note, style = MaterialTheme.typography.bodySmall, color = C.muted)
+                OutlinedTextField(value = text, onValueChange = { text = it }, singleLine = true, suffix = { Text("g") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val v = text.trim().replace(',', '.')
+                if (v.isEmpty()) onSave(null) else v.toDoubleOrNull()?.takeIf { it > 0 }?.let(onSave)
+            }) { Text("Save", color = C.goText) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Plan a prep session: make some (by weight); it goes in the fridge for the meals that use it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MakePrepSheet(r: RecipeDetail, onDismiss: () -> Unit, done: (String, Boolean) -> Unit) {
+    val app = app()
+    val scope = rememberCoroutineScope()
+    val tick = rememberTick()
+    val full = (r.nutrition.yieldGrams ?: 0.0).roundToInt()
+    var day by remember { mutableStateOf<String?>(today()) }
+    var grams by remember { mutableStateOf(if (full > 0) full.toString() else "") }
+    var busy by remember { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
+        Column(Modifier.padding(bottom = 24.dp)) {
+            Text("Make it", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp))
+            Text("It goes in the fridge; meals that use it take what they need, oldest first. The grocery list buys for it.",
+                color = C.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+            Text("When", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
+            DayChips(day, { tick(); day = it }, wrap = true, days = 10)
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = grams, onValueChange = { grams = it.filter { c -> c.isDigit() || c == '.' } }, label = { Text("How much") },
+                    singleLine = true, suffix = { Text("g") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                if (full > 0 && grams != full.toString()) TextButton(onClick = { grams = full.toString() }) { Text("Whole ($full g)", color = C.goText) }
+            }
+            Button(
+                enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = C.ink),
+                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(56.dp),
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            app.api.addEntry(buildJsonObject {
+                                put("day", day?.let { JsonPrimitive(it) } ?: JsonNull)
+                                put("recipe_id", r.id)
+                                grams.toDoubleOrNull()?.takeIf { it > 0 }?.let { put("made_grams", it) }
+                            })
+                            app.store.refreshPlans()
+                            done("Planned: making ${r.title.lowercase()} ${if (day == null) "(queue)" else dayChipLabel(day).lowercase()}", true)
+                        } catch (e: Exception) { done(e.friendly(), false) } finally { busy = false }
+                    }
+                },
+            ) {
+                val label = dayChipLabel(day)
+                Text(if (day == null) "Add to queue" else if (label == "Today" || label == "Tomorrow") "Make ${label.lowercase()}" else "Make on $label",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

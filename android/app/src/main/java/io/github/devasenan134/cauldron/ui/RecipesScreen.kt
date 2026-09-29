@@ -118,7 +118,9 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe
                 is Load.Failed -> item(span = { GridItemSpan(maxLineSpan) }) { Loaded(load, retry) {} }
                 is Load.Ready -> {
                     if (load.value.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                        if (filter.mine && filter.count == 1 && filter.q.isEmpty())
+                        if (filter.prep && filter.count == 1 && filter.q.isEmpty())
+                            Empty("🫙", "No prepped ingredients yet", "Mark a recipe like cooked rice, pickled onions or a sauce as a prepped ingredient (on its page), and other recipes can use it by weight.")
+                        else if (filter.mine && filter.count == 1 && filter.q.isEmpty())
                             Empty("🧑‍🍳", "No recipes of your own yet", "Tap + to write one: ingredients, steps and a photo, like the rest of the library.")
                         else Empty("🔍", "No recipes found", "Try another word, or fewer filters.")
                     }
@@ -149,6 +151,7 @@ private fun QuickRow(filter: RecipeFilter, categories: List<String>, onChange: (
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 14.dp)) {
         item { Chip("All", selected = filter.count == 0) { onChange(RecipeFilter(q = filter.q, sort = filter.sort)) } }
         item { Chip("My recipes", selected = filter.mine) { onChange(filter.copy(mine = !filter.mine)) } }
+        item { Chip("🫙 Prepped", selected = filter.prep) { onChange(filter.copy(prep = !filter.prep)) } }
         items(categories) { c ->
             Chip(c, selected = c in filter.categories) { onChange(filter.copy(categories = filter.categories.toggle(c))) }
         }
@@ -255,6 +258,8 @@ private fun RecipeCard(r: RecipeSummary, modifier: Modifier, onClick: () -> Unit
                     modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
+            if (r.isPrep) Text("🫙 Prep", color = C.onGo, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp).background(C.go, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp))
         }
         Text(r.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp, start = 2.dp))
         Text(listOfNotNull(r.totalMinutes?.let { "$it min" }, r.cuisine).joinToString(" · "),

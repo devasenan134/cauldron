@@ -52,6 +52,8 @@ import io.github.devasenan134.cauldron.ui.BottomTabBar
 import io.github.devasenan134.cauldron.ui.C
 import io.github.devasenan134.cauldron.ui.CauldronTheme
 import io.github.devasenan134.cauldron.ui.FolderScreen
+import io.github.devasenan134.cauldron.ui.FoodScreen
+import io.github.devasenan134.cauldron.ui.IngredientsScreen
 import io.github.devasenan134.cauldron.ui.FridgeScreen
 import io.github.devasenan134.cauldron.ui.GroceryScreen
 import io.github.devasenan134.cauldron.ui.HomeScreen
@@ -123,16 +125,19 @@ private sealed interface Page {
     data class Folder(val id: Int) : Page
     data object Grocery : Page
     data object Settings : Page
+    data object Ingredients : Page
+    data class Food(val id: Int?) : Page // null = a new food of your own
 
     fun save(): String = when (this) {
         is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"
+        Ingredients -> "ingredients"; is Food -> "food:${id ?: ""}"
     }
 
     companion object {
         fun load(s: String): Page? = s.split(":").let { p ->
             when (p[0]) {
                 "recipe" -> Recipe(p[1].toInt()); "edit" -> Edit(p[1].toIntOrNull()); "folder" -> Folder(p[1].toInt())
-                "grocery" -> Grocery; "settings" -> Settings; else -> null
+                "grocery" -> Grocery; "settings" -> Settings; "ingredients" -> Ingredients; "food" -> Food(p[1].toIntOrNull()); else -> null
             }
         }
     }
@@ -273,7 +278,7 @@ private fun AppRoot() {
                                 Tabs.RECIPES -> RecipesScreen(openRecipe = openRecipe, newRecipe = { open(Page.Edit(null)) }, importRecipe = { importing = true })
                                 Tabs.PLAN -> PlannerScreen(openRecipe = openRecipe, openGrocery = { open(Page.Grocery) })
                                 Tabs.FRIDGE -> FridgeScreen(openRecipe = openRecipe)
-                                Tabs.PROFILE -> ProfileScreen(openRecipe = openRecipe, openFolder = { open(Page.Folder(it)) })
+                                Tabs.PROFILE -> ProfileScreen(openRecipe = openRecipe, openFolder = { open(Page.Folder(it)) }, openIngredients = { open(Page.Ingredients) })
                             }
                         }
                     }
@@ -329,12 +334,14 @@ private fun AppRoot() {
 private fun PageContent(page: Page, back: () -> Unit, open: (Page) -> Unit, openRecipe: (Int) -> Unit, replace: (Page) -> Unit, toTab: (String) -> Unit) {
     when (page) {
         is Page.Recipe -> RecipeScreen(id = page.id, back = back, openPlan = { toTab(Tabs.PLAN) },
-            edit = { open(Page.Edit(page.id)) }, openRecipe = openRecipe, editNew = { open(Page.Edit(it)) })
+            edit = { open(Page.Edit(page.id)) }, openRecipe = openRecipe, editNew = { open(Page.Edit(it)) }, openFood = { open(Page.Food(it)) })
         is Page.Edit -> RecipeEditorScreen(page.id, back = back,
             saved = { id -> if (page.id == null) replace(Page.Recipe(id)) else back() },
             deleted = { toTab(Tabs.RECIPES) })
         is Page.Folder -> FolderScreen(page.id, back = back, openRecipe = openRecipe)
         Page.Grocery -> GroceryScreen(openPlan = { toTab(Tabs.PLAN) }, back = back)
         Page.Settings -> SettingsScreen(back = back)
+        Page.Ingredients -> IngredientsScreen(back = back, openFood = { open(Page.Food(it)) }, openRecipe = openRecipe)
+        is Page.Food -> FoodScreen(page.id, back = back, openRecipe = openRecipe, created = { replace(Page.Food(it)) })
     }
 }

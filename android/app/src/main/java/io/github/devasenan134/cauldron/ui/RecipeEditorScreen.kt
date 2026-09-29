@@ -89,8 +89,11 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
 // The editor's working copy. Ingredients sit in sections ("Sauce", "Toppings"), like the library's.
-private class IngRow(name: String = "", label: String = "", note: String = "") {
+// prepId: made from one of your prepped ingredients (dropped when the name changes; the server links
+// a name that matches a prep by itself).
+private class IngRow(name: String = "", label: String = "", note: String = "", prepId: Int? = null) {
     var name by mutableStateOf(name); var label by mutableStateOf(label); var note by mutableStateOf(note)
+    var prepId by mutableStateOf(prepId)
 }
 private class Section(name: String = "", rows: List<IngRow> = listOf(IngRow())) {
     var name by mutableStateOf(name)
@@ -107,6 +110,7 @@ private class Draft {
     var cuisine by mutableStateOf(""); var category by mutableStateOf("")
     var tags by mutableStateOf(setOf<String>())
     var videoUrl by mutableStateOf(""); var sourceUrl by mutableStateOf(""); var notes by mutableStateOf("")
+    var isPrep by mutableStateOf(false); var yieldGrams by mutableStateOf("")
     val sections = mutableStateListOf(Section())
     val steps = mutableStateListOf(StepRow())
 
@@ -115,8 +119,9 @@ private class Draft {
         minutes = r.totalMinutes?.toString() ?: ""; servings = r.servings?.let { num(it) } ?: ""; yieldText = r.yieldText ?: ""
         cuisine = r.cuisine ?: ""; category = r.category ?: ""; tags = r.tags.toSet()
         videoUrl = r.videoUrl ?: ""; sourceUrl = r.sourceUrl ?: ""; notes = r.notes
+        isPrep = r.isPrep; yieldGrams = r.yieldGrams?.let { num(it) } ?: ""
         sections.clear()
-        r.ingredients.groupBy { it.group.orEmpty() }.forEach { (g, ings) -> sections += Section(g, ings.map { IngRow(it.name, it.label, it.note) }) }
+        r.ingredients.groupBy { it.group.orEmpty() }.forEach { (g, ings) -> sections += Section(g, ings.map { IngRow(it.name, it.label, it.note, it.prepId) }) }
         if (sections.isEmpty()) sections += Section()
         steps.clear(); steps.addAll(r.steps.map { StepRow(it.title, it.text) }); if (steps.isEmpty()) steps += StepRow()
     }
@@ -127,7 +132,8 @@ private class Draft {
         servings = servings.replace(',', '.').toDoubleOrNull(), yieldText = yieldText.trim().ifEmpty { null },
         totalMinutes = minutes.toIntOrNull(), cuisine = cuisine.trim().ifEmpty { null }, category = category.trim().ifEmpty { null },
         tags = tags.toList(), notes = notes.trim(),
-        ingredients = sections.flatMap { s -> s.rows.filter { it.name.isNotBlank() }.map { IngredientIn(s.name.trim().ifEmpty { null }, it.name.trim(), it.note.trim(), it.label.trim()) } },
+        isPrep = isPrep, yieldGrams = if (isPrep) yieldGrams.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 } else null,
+        ingredients = sections.flatMap { s -> s.rows.filter { it.name.isNotBlank() }.map { IngredientIn(s.name.trim().ifEmpty { null }, it.name.trim(), it.note.trim(), it.label.trim(), it.prepId) } },
         steps = steps.filter { it.text.isNotBlank() }.map { StepIn(it.title.trim(), it.text.trim()) },
     )
 }
@@ -148,6 +154,10 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
     val facets by store.facets.collectAsState()
+    var preps by remember { mutableStateOf<List<io.github.devasenan134.cauldron.data.RecipeSummary>>(emptyList()) }
+    LaunchedEffect(Unit) { preps = runCatching { app.api.preps() }.getOrDefault(emptyList()).filter { it.id != id } }
+    fun stem(t: String) = t.trim().lowercase().removeSuffix("s")
+    fun prepNamed(name: String) = preps.firstOrNull { stem(it.title) == stem(name) && name.isNotBlank() }
     // What the form held when it opened: leaving with changes asks first.
     var original by remember { mutableStateOf<RecipeIn?>(if (id == null) Draft().toBody() else null) }
     val dirty = loaded && original != null && draft.toBody() != original
@@ -221,6 +231,19 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
                             Field(draft.servings, { draft.servings = it.filter { c -> c.isDigit() || c == '.' }.take(4) }, "Servings", Modifier.weight(1f), number = true, label = "Makes")
                         }
                         Field(draft.yieldText, { draft.yieldText = it }, "Yield as you'd say it, e.g. 3-4 burritos (optional)")
+                        Column(Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (draft.isPrep) C.goSoft else C.surface).padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("🫙 Prepped ingredient", fontWeight = FontWeight.SemiBold)
+                                    Text("Cooked rice, pickled onions, a sauce: other recipes use it by weight, and what you make goes in the fridge.",
+                                        fontSize = 13.sp, color = C.muted)
+                                }
+                                androidx.compose.material3.Switch(checked = draft.isPrep, onCheckedChange = { draft.isPrep = it },
+                                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.go, checkedThumbColor = C.onGo))
+                            }
+                            if (draft.isPrep) Field(draft.yieldGrams, { draft.yieldGrams = it.filter { c -> c.isDigit() || c == '.' }.take(6) },
+                                "Blank: what the ingredients weigh", number = true, label = "Weighs when done (g)")
+                        }
                         Group("Meal") {
                             val options = (facets?.categories.orEmpty() + listOf("Breakfast", "Lunch", "Dinner", "Side", "Snack", "Dessert")).distinct()
                             options.forEach { c -> Chip(c, draft.category == c) { draft.category = if (draft.category == c) "" else c } }
@@ -236,7 +259,7 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
                     }
                 }
                 // Ingredients
-                item { SectionTitle("Ingredients", "Write amounts the way you'd say them: 200 g, 2 cloves, 1 tbsp, a drizzle. Calories are worked out when you save.") }
+                item { SectionTitle("Ingredients", "Write amounts the way you'd say them: 200 g, 2 cloves, 1 tbsp, a drizzle. Calories are worked out when you save. Name one of your prepped ingredients (300 g cooked rice) to use it.") }
                 itemsIndexed(draft.sections) { si, section ->
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.surface).padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,7 +271,17 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
                                 Field(row.label, { row.label = it }, "Amount", Modifier.width(96.dp), small = true)
                                 Spacer(Modifier.width(6.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Field(row.name, { row.name = it }, "Ingredient", small = true, capitalize = true)
+                                    Field(row.name, { row.name = it; row.prepId = null }, "Ingredient", small = true, capitalize = true)
+                                    val prep = row.prepId?.let { pid -> preps.firstOrNull { it.id == pid } } ?: prepNamed(row.name)
+                                    if (prep != null || row.prepId != null) Text("🫙 uses your prep" + (prep?.let { ": ${it.title}" } ?: ""), color = C.goText,
+                                        fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
+                                    // Suggest your preps while typing.
+                                    if (row.prepId == null && row.name.length >= 2 && prepNamed(row.name) == null) {
+                                        val hits = preps.filter { it.title.contains(row.name.trim(), ignoreCase = true) }.take(3)
+                                        if (hits.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                            hits.forEach { h -> Chip("🫙 ${h.title}", false) { row.name = h.title; row.prepId = h.id } }
+                                        }
+                                    }
                                     Field(row.note, { row.note = it }, "Note, e.g. diced (optional)", small = true)
                                 }
                                 IconButtonSmall(Icons.Default.Close, "Remove ingredient") { if (section.rows.size > 1) section.rows.removeAt(ri) else { row.name = ""; row.label = ""; row.note = "" } }
