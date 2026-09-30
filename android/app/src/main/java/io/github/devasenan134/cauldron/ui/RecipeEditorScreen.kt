@@ -79,6 +79,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import io.github.devasenan134.cauldron.data.LIBRARY_SOURCES
 import io.github.devasenan134.cauldron.data.IngredientIn
 import io.github.devasenan134.cauldron.data.RecipeDetail
 import io.github.devasenan134.cauldron.data.RecipeIn
@@ -151,6 +152,8 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
     val snackbar = remember { SnackbarHostState() }
     val draft = remember { Draft() }
     var loaded by remember { mutableStateOf(source == null) }
+    // Library recipes aren't deleted, only hidden (Settings → Recipe libraries).
+    var isLibrary by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var uploading by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -172,6 +175,7 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
             try {
                 val r = store.recipe.value[source] ?: store.loadRecipe(source)
                 draft.fill(r)
+                isLibrary = id != null && r.source in LIBRARY_SOURCES
                 if (id == null) draft.title = "${r.title} (my version)"
                 original = draft.toBody(); loaded = true
             } catch (e: Exception) { snackbar.showSnackbar(e.friendly()) }
@@ -328,7 +332,7 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
                         Field(draft.videoUrl, { draft.videoUrl = it }, "Video link (YouTube, Reels…)", label = "Video")
                         Field(draft.sourceUrl, { draft.sourceUrl = it }, "Where it's from (a link, optional)", label = "Source")
                         Field(draft.notes, { draft.notes = it }, "Notes for next time", label = "Notes", minLines = 2, capitalize = true)
-                        if (id != null) TextButton(onClick = { confirmDelete = true }, modifier = Modifier.padding(top = 16.dp)) {
+                        if (id != null && !isLibrary) TextButton(onClick = { confirmDelete = true }, modifier = Modifier.padding(top = 16.dp)) {
                             Icon(Icons.Default.DeleteOutline, null, tint = C.danger); Text(" Delete this recipe", color = C.danger, fontWeight = FontWeight.SemiBold)
                         }
                         Spacer(Modifier.height(48.dp))

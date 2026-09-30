@@ -49,6 +49,10 @@ class Recipe(RecipeBase, table=True):
     owner_id: int = Field(foreign_key="user.id", index=True)
     # Your variation of another recipe (the original is kept as is).
     parent_id: int | None = Field(default=None, foreign_key="recipe.id", ondelete="SET NULL", index=True)
+    # The recipe libraries (Settings → Recipe libraries, for the owner):
+    hidden: bool = False  # taken out of its library: nobody sees it, but it's kept (and never added back)
+    edited: bool = False  # a starter recipe changed in the app: rewriting from recipes.json leaves it alone
+    library_from: str | None = None  # one of the owner's own recipes put in a library: its old source
     created_at: datetime = Field(default_factory=now)
     updated_at: datetime = Field(default_factory=now)
 

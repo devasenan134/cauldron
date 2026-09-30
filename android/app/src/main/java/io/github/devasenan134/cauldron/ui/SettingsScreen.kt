@@ -68,7 +68,7 @@ import java.io.File
 import java.time.LocalDate
 
 @Composable
-fun SettingsScreen(back: () -> Unit) {
+fun SettingsScreen(back: () -> Unit, openLibraries: () -> Unit) {
     val app = app()
     val context = LocalContext.current
     val me = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me
@@ -154,6 +154,21 @@ fun SettingsScreen(back: () -> Unit) {
 
             SectionLabel("App updates")
             UpdatesCard()
+
+            if (me?.isOwner == true) {
+                SectionLabel("Recipe libraries")
+                Card {
+                    Row(Modifier.fillMaxWidth().pressable(openLibraries, 0.98f), verticalAlignment = Alignment.CenterVertically) {
+                        Text("📚", fontSize = 28.sp)
+                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                            Text("Manage the recipe libraries", fontWeight = FontWeight.SemiBold)
+                            Text("The recipes everyone gets, and the ones for your guests: edit, hide or add your own",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text("›", fontSize = 22.sp, color = C.muted)
+                    }
+                }
+            }
 
             SectionLabel("Feedback")
             Card { FeedbackForm(owner = me?.isOwner == true) }

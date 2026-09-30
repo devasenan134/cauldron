@@ -271,7 +271,8 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                     Icon(if (r.folderIds.isNotEmpty()) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, "Save to a folder", tint = C.ink)
                 }
                 // Your own recipes can be rewritten.
-                if (r.isMine) { Spacer(Modifier.width(8.dp)); FloatingCircle(edit) { Icon(Icons.Default.Edit, "Edit recipe", tint = C.ink) } }
+                // Your recipes; the owner also rewrites the libraries' (only the owner can edit those).
+                if (r.canEdit) { Spacer(Modifier.width(8.dp)); FloatingCircle(edit) { Icon(Icons.Default.Edit, "Edit recipe", tint = C.ink) } }
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 80.dp))

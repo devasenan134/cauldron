@@ -99,7 +99,7 @@ class CatalogOut(SQLModel):
 
 def folder_out(session: Session, folder: Folder) -> FolderOut:
     rows = session.exec(select(Recipe).join(FolderRecipe, FolderRecipe.recipe_id == Recipe.id)
-                        .where(FolderRecipe.folder_id == folder.id).order_by(col(FolderRecipe.added_at).desc())).all()
+                        .where(FolderRecipe.folder_id == folder.id, Recipe.hidden == False).order_by(col(FolderRecipe.added_at).desc())).all()  # noqa: E712
     return FolderOut(id=folder.id, name=folder.name, count=len(rows), covers=[r.image_url for r in rows if r.image_url][:4])
 
 
@@ -108,7 +108,8 @@ def catalog(session: Session = Depends(get_session), user: User = Depends(curren
     mine = list(session.exec(select(Recipe).where(Recipe.owner_id == user.id, not_library())
                              .order_by(col(Recipe.updated_at).desc())))
     favs = list(session.exec(select(Recipe).join(Favorite, Favorite.recipe_id == Recipe.id)
-                             .where(Favorite.owner_id == user.id).order_by(col(Favorite.created_at).desc())))
+                             .where(Favorite.owner_id == user.id, Recipe.hidden == False)  # noqa: E712
+                             .order_by(col(Favorite.created_at).desc())))
     folders = session.exec(select(Folder).where(Folder.owner_id == user.id).order_by(Folder.name)).all()
     return CatalogOut(mine=summaries(session, mine, user), favorites=summaries(session, favs, user), folders=[folder_out(session, f) for f in folders])
 
@@ -179,7 +180,7 @@ class FolderDetail(SQLModel):
 def get_folder(folder_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
     folder = owned_folder(session, folder_id, user)
     rows = list(session.exec(select(Recipe).join(FolderRecipe, FolderRecipe.recipe_id == Recipe.id)
-                             .where(FolderRecipe.folder_id == folder.id).order_by(col(FolderRecipe.added_at).desc())))
+                             .where(FolderRecipe.folder_id == folder.id, Recipe.hidden == False).order_by(col(FolderRecipe.added_at).desc())))  # noqa: E712
     return FolderDetail(id=folder.id, name=folder.name, recipes=summaries(session, rows, user))
 
 

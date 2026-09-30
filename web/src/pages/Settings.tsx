@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { api, type Me } from '../api'
 import { ME, useDeleteAccount, useMe, useSignOut } from '../auth'
 import { FeedbackForm, FeedbackInbox } from '../components/Feedback'
@@ -101,6 +102,20 @@ export default function Settings() {
           <p className="text-stone-500">{app.isPending ? 'Checking…' : 'No app build is available yet.'}</p>
         )}
       </Card>
+
+      {me?.is_owner && (<>
+        <SectionTitle>Recipe libraries</SectionTitle>
+        <Card>
+          <Link to="/settings/libraries" className="press flex w-full items-center gap-4 text-left">
+            <div className="text-3xl">📚</div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Manage the recipe libraries</p>
+              <p className="text-sm text-stone-500">The recipes everyone gets, and the ones for your guests: edit, hide or add your own</p>
+            </div>
+            <span className="text-xl text-stone-400">›</span>
+          </Link>
+        </Card>
+      </>)}
 
       <SectionTitle>Feedback</SectionTitle>
       <Card><FeedbackForm owner={!!me?.is_owner} /></Card>

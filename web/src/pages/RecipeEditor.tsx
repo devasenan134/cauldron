@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, type RecipeDetail, type RecipeIn } from '../api'
+import { api, LIBRARY_SOURCES, type RecipeDetail, type RecipeIn } from '../api'
 import { Button, Chip } from '../components/ui'
 import { thumb } from '../format'
 import { refreshPlan } from '../plan'
@@ -248,7 +248,8 @@ export default function RecipeEditor() {
       <Field label="Video" value={d.video_url} onChange={(v) => set({ video_url: v })} placeholder="Video link (YouTube, Reels…)" />
       <Field label="Source" value={d.source_url} onChange={(v) => set({ source_url: v })} placeholder="Where it's from (a link, optional)" />
       <Field label="Notes" value={d.notes} onChange={(v) => set({ notes: v })} placeholder="Notes for next time" multiline />
-      {id != null && <button onClick={remove} className="mt-8 font-semibold text-danger hover:underline">🗑 Delete this recipe</button>}
+      {/* Library recipes aren't deleted, only hidden (Settings → Recipe libraries). */}
+      {id != null && !LIBRARY_SOURCES.includes(existing.data?.source ?? '') && <button onClick={remove} className="mt-8 font-semibold text-danger hover:underline">🗑 Delete this recipe</button>}
       <div className="h-16" />
     </div>
   )

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session, SQLModel, col, or_, select
+from sqlmodel import Session, SQLModel, and_, col, or_, select
 
 from ..db import get_session
 from ..deps import current_user
@@ -94,8 +94,8 @@ def shared_sources(user: User) -> list[str]:
 
 
 def visible(user: User):
-    """Your own recipes plus the libraries you may see."""
-    return or_(Recipe.owner_id == user.id, col(Recipe.source).in_(shared_sources(user)))
+    """Your own recipes plus the libraries you may see (not the ones the owner hid)."""
+    return and_(Recipe.hidden == False, or_(Recipe.owner_id == user.id, col(Recipe.source).in_(shared_sources(user))))  # noqa: E712
 
 
 def not_library():
@@ -113,6 +113,8 @@ def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = Fals
 
 
 def can_see(recipe: Recipe, user: User) -> bool:
+    if recipe.hidden:  # a hidden library recipe: only the owner, to edit it or bring it back
+        return recipe.owner_id == user.id
     return recipe.owner_id == user.id or recipe.source in shared_sources(user)
 
 
@@ -306,19 +308,26 @@ def create_recipe(body: RecipeIn, session: Session = Depends(get_session), user:
 
 @router.put("/recipes/{recipe_id}", response_model=RecipeDetail)
 def update_recipe(recipe_id: int, body: RecipeIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Rewrite your recipe. The libraries are the owner's, so only the owner rewrites those."""
     recipe = owned_recipe(session, recipe_id, user, edit=True)
-    if recipe.source in LIBRARY_SOURCES:
-        raise HTTPException(403, "library recipes can't be rewritten; fix ingredient weights and foods instead")
     if not body.title.strip():
         raise HTTPException(400, "a recipe needs a title")
-    return recipe_detail(session, save_recipe(session, recipe, body), user)
+    slug = recipe.slug
+    if recipe.source == STARTER_SOURCE:
+        recipe.edited = True  # so rewriting the starter recipes from recipes.json keeps this version
+    recipe = save_recipe(session, recipe, body)
+    if recipe.source in LIBRARY_SOURCES and recipe.slug != slug:
+        recipe.slug = slug  # a library recipe keeps its slug: seeding finds it by that
+        session.add(recipe)
+        session.commit()
+    return recipe_detail(session, recipe, user)
 
 
 @router.delete("/recipes/{recipe_id}")
 def delete_recipe(recipe_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
     recipe = owned_recipe(session, recipe_id, user, edit=True)
     if recipe.source in LIBRARY_SOURCES:
-        raise HTTPException(403, "library recipes can't be deleted")
+        raise HTTPException(403, "library recipes can't be deleted; hide them in Settings → Recipe libraries instead")
     session.delete(recipe)
     session.commit()
     return {"ok": True}

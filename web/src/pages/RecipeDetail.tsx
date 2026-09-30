@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, LIBRARY_SOURCES, type Ingredient, type Meal, type RecipeDetail as Recipe } from '../api'
+import { api, type Ingredient, type Meal, type RecipeDetail as Recipe } from '../api'
 import { MealPicker, mealNow } from '../components/MealLog'
 import { today } from '../dates'
 import { refreshPlan } from '../plan'
@@ -46,8 +46,8 @@ export default function RecipeDetail() {
         <div className="flex items-center gap-2">
           <FavoriteButton r={r} />
           <FolderButton r={r} />
-          {/* Your own recipes can be rewritten (the libraries can't). */}
-          {r.can_edit && !LIBRARY_SOURCES.includes(r.source) && (
+          {/* Your own recipes can be rewritten (the owner also rewrites the libraries). */}
+          {r.can_edit && (
             <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
           )}
         </div>

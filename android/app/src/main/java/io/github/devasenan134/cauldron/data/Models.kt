@@ -167,13 +167,26 @@ data class RecipeDetail(
     val usedIn: List<RecipeRef> = emptyList(),
     /** Who took the photo, when it isn't yours (the starter recipes' photos). */
     val imageCredit: ImageCredit? = null,
-) {
-    /** Your own recipe (not one of the shared libraries): you can rewrite or delete it. */
-    val isMine get() = canEdit && source !in LIBRARY_SOURCES
-}
+)
 
-/** The shared libraries: the starter recipes everyone sees, and Cook Well for the guest list. Read-only. */
+/** The shared libraries: the starter recipes everyone sees, and Cook Well for the guest list. Only the owner edits them, and they're hidden rather than deleted. */
 val LIBRARY_SOURCES = setOf("starter", "cookwell")
+
+/** A recipe in one of the owner's libraries (Settings → Recipe libraries): everyone = starter, guests = Cook Well. */
+@Serializable
+data class LibraryRecipe(
+    val id: Int,
+    val title: String,
+    val imageUrl: String? = null,
+    val source: String = "",
+    val cuisine: String? = null,
+    val kcalPerServing: Double? = null,
+    val hidden: Boolean = false,
+    /** A starter recipe changed in the app: recipes.json no longer rewrites it. */
+    val edited: Boolean = false,
+    /** One of the owner's recipes put here: it can go back to their recipes. */
+    val yours: Boolean = false,
+)
 
 /** A bug report or feature request (Settings → Feedback). The owner sees who sent it. */
 @Serializable
