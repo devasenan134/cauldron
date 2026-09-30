@@ -122,6 +122,8 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe
                             Empty("🫙", "No prepped ingredients yet", "Mark a recipe like cooked rice, pickled onions or a sauce as a prepped ingredient (on its page), and other recipes can use it by weight.")
                         else if (filter.mine && filter.count == 1 && filter.q.isEmpty())
                             Empty("🧑‍🍳", "No recipes of your own yet", "Tap + to write one: ingredients, steps and a photo, like the rest of the library.")
+                        else if (filter.count == 0 && filter.q.isEmpty())
+                            Empty("🍲", "Your recipe book is empty", "Tap 🔗 to import a recipe from a YouTube video, an Instagram Reel, a web page or a PDF, or + to write your own.")
                         else Empty("🔍", "No recipes found", "Try another word, or fewer filters.")
                     }
                     items(load.value, key = { it.id }) { RecipeCard(it, Modifier.animateItem()) { openRecipe(it.id) } }

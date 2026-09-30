@@ -8,7 +8,7 @@ from google.oauth2 import id_token
 from sqlmodel import Session, select
 
 from .models import AuthSession, User
-from .users import allowed_emails
+from .users import blocked_emails, may_sign_in
 
 GOOGLE_CLIENT_ID = os.environ.get("CAULDRON_GOOGLE_CLIENT_ID", "")
 COOKIE = "cauldron_session"
@@ -37,8 +37,8 @@ def verify_google(credential: str) -> dict:
 def sign_in(session: Session, claims: dict) -> tuple[User, str]:
     """Find or create the user for verified Google claims and start a session."""
     email = claims["email"].lower()
-    if email not in allowed_emails():
-        raise AuthError(f"{email} is not on the guest list")
+    if not may_sign_in(email):
+        raise AuthError(f"{email} can't sign in here" if email in blocked_emails() else f"{email} is not on the guest list")
     user = session.exec(select(User).where(User.email == email)).first()
     if user is None:
         user = User(email=email)
@@ -64,8 +64,8 @@ def user_for_token(session: Session, token: str | None) -> User | None:
         session.commit()
         return None
     user = session.get(User, row.user_id)
-    # Removing someone from the allowlist locks them out on their next request.
-    return user if user and user.email in allowed_emails() else None
+    # Removing someone from the guest list (or blocking them) locks them out on their next request.
+    return user if user and may_sign_in(user.email) else None
 
 
 def sign_out(session: Session, token: str | None) -> None:

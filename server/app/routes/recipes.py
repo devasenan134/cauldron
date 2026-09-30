@@ -7,6 +7,7 @@ from ..models import Food, Ingredient, Recipe, RecipeBase, Step, User
 from ..nutrition import macros, source_of
 from ..prep import Kitchen, nutrition_for
 from ..recipe_edit import RecipeIn, relink_recipe, save_recipe
+from ..users import sees_library
 
 router = APIRouter()
 
@@ -82,8 +83,8 @@ class PrepPatch(SQLModel):
 
 
 def visible(user: User):
-    """Your own recipes plus the shared Cook Well library."""
-    return or_(Recipe.owner_id == user.id, Recipe.source == SHARED_SOURCE)
+    """Your own recipes plus the shared Cook Well library (for those who may see it)."""
+    return or_(Recipe.owner_id == user.id, Recipe.source == SHARED_SOURCE) if sees_library(user) else Recipe.owner_id == user.id
 
 
 def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = False) -> Recipe:
@@ -97,7 +98,7 @@ def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = Fals
 
 
 def can_see(recipe: Recipe, user: User) -> bool:
-    return recipe.owner_id == user.id or recipe.source == SHARED_SOURCE
+    return recipe.owner_id == user.id or (recipe.source == SHARED_SOURCE and sees_library(user))
 
 
 def can_edit(recipe: Recipe, user: User) -> bool:

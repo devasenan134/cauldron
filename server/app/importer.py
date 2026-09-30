@@ -24,10 +24,12 @@ Imports run one at a time in the background; the app polls.
 """
 import base64
 import html
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -82,13 +84,53 @@ class ImportError_(Exception):
 
 
 def platform(url: str) -> str | None:
-    if re.search(r"(youtube\.com|youtu\.be)/", url):
+    """youtube, instagram or web, by the link's host (so yt-dlp only ever gets YouTube and Instagram links)."""
+    if not re.match(r"https?://[^/\s]+\.[^/\s]+", url):
+        return None
+    try:
+        host = (httpx.URL(url).host or "").lower()
+    except httpx.InvalidURL:
+        return None
+    if host in ("youtu.be", "youtube.com") or host.endswith(".youtube.com"):
         return "youtube"
-    if re.search(r"instagram\.com/(reel|reels|p|tv)/", url):
+    if (host == "instagram.com" or host.endswith(".instagram.com")) and re.search(r"instagram\.com/(?:[\w.]+/)?(reel|reels|p|tv)/", url):
         return "instagram"
-    if re.match(r"https?://[^/\s]+\.[^/\s]+", url):
-        return "web"
-    return None
+    return "web"
+
+
+def public_host(url: httpx.URL) -> bool:
+    """True if every address the host resolves to is on the public internet. Links people paste are
+    fetched from the server, which sits on a home network: never let them reach the router, the
+    other services on the box, or the cloud metadata address."""
+    if url.scheme not in ("http", "https") or not url.host:
+        return False
+    try:
+        infos = socket.getaddrinfo(url.host, url.port or (443 if url.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+    return bool(infos) and all(ipaddress.ip_address(info[4][0].split("%")[0]).is_global for info in infos)
+
+
+def safe_get(url: str, *, timeout: float, headers: dict, max_bytes: int = FILE_MAX) -> httpx.Response:
+    """GET a public web address, following up to 5 redirects and checking each hop with public_host."""
+    target = httpx.URL(url)
+    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=False) as http:
+        for _ in range(6):
+            if not public_host(target):
+                raise ImportError_("That link points somewhere the server won't go.")
+            with http.stream("GET", target) as r:
+                if r.is_redirect and "location" in r.headers:
+                    target = target.join(r.headers["location"])
+                    continue
+                body = bytearray()
+                for chunk in r.iter_bytes():
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise ImportError_("That page is too big to read.")
+                # The body is already decompressed: drop the headers that describe it on the wire.
+                kept = [(k, v) for k, v in r.headers.multi_items() if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")]
+                return httpx.Response(r.status_code, headers=kept, content=bytes(body), request=r.request)
+    raise ImportError_("That link redirects too many times.")
 
 
 def clean_url(url: str) -> str:
@@ -248,7 +290,7 @@ class Blocked(Exception):
 
 def fetch(url: str) -> httpx.Response:
     try:
-        r = httpx.get(url, headers=BROWSER, follow_redirects=True, timeout=30)
+        r = safe_get(url, headers=BROWSER, timeout=30)
     except httpx.HTTPError as e:
         raise ImportError_(f"Couldn't open that page ({type(e).__name__}).") from e
     if r.status_code in (401, 403, 429, 503):
@@ -665,7 +707,7 @@ def keep_thumbnail(info: dict) -> str | None:
     if not url:
         return None
     try:
-        r = httpx.get(url, timeout=20, follow_redirects=True, headers=BROWSER | {"Accept": "image/*"})
+        r = safe_get(url, timeout=20, headers=BROWSER | {"Accept": "image/*"}, max_bytes=15 * 1024 * 1024)
         r.raise_for_status()
         if not r.headers.get("content-type", "").startswith("image/"):
             return None

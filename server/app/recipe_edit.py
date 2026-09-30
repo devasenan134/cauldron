@@ -9,7 +9,7 @@ An ingredient named like one of your prepped-ingredient recipes ("pickled onions
 """
 import re
 
-from sqlmodel import Session, SQLModel, col, delete, or_, select
+from sqlmodel import Session, SQLModel, col, delete, select
 
 from .foodlink import ensure_custom_foods, food_index
 from .foodmap import FOOD_FOR
@@ -215,8 +215,10 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
 
 def visible_preps(session: Session, owner_id: int) -> dict[int, Recipe]:
     """Prepped-ingredient recipes this user can use: their own and the shared library's."""
-    from .routes.recipes import SHARED_SOURCE
-    stmt = select(Recipe).where(Recipe.is_prep == True, or_(Recipe.owner_id == owner_id, Recipe.source == SHARED_SOURCE))  # noqa: E712
+    from .models import User
+    from .routes.recipes import visible
+    user = session.get(User, owner_id)
+    stmt = select(Recipe).where(Recipe.is_prep == True, visible(user) if user else Recipe.owner_id == owner_id)  # noqa: E712
     return {r.id: r for r in session.exec(stmt)}
 
 

@@ -100,6 +100,13 @@ export default function Recipes() {
         : filter.mine && n === 1 && !filter.q
         ? <Empty emoji="🧑‍🍳" title="No recipes of your own yet" body="Write one: ingredients, steps and a photo, like the rest of the library."
             action={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
+        : n === 0 && !filter.q
+        ? <Empty emoji="🍲" title="Your recipe book is empty"
+            body="Import a recipe from a YouTube video, an Instagram Reel, a web page or a PDF, or write your own."
+            action={<div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => setImporting(true)}>🔗 Import</Button>
+              <Button variant="ghost" onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>
+            </div>} />
         : <Empty emoji="🔍" title="No recipes found" body="Try another word, or fewer filters." />)}
 
       <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">

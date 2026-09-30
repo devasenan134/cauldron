@@ -1,17 +1,36 @@
-from pathlib import Path
-
+import os
 import re
 import secrets
+from datetime import timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, col, func, select
 
 from .. import importer
 from ..db import get_session
-from ..deps import current_user
-from ..models import User
+from ..deps import current_user, is_owner
+from ..models import User, now
 
 router = APIRouter(prefix="/import")
+
+# Imports share one Gemini key and run one at a time, so each person gets one at a time and a daily
+# allowance (the owner has no limit).
+PER_DAY = int(os.environ.get("CAULDRON_IMPORTS_PER_DAY", "20"))
+
+
+def check_allowance(session: Session, user: User) -> None:
+    if is_owner(user):
+        return
+    Job = importer.ImportJob
+
+    def count(*where) -> int:
+        return session.exec(select(func.count()).select_from(Job).where(Job.owner_id == user.id, *where)).one()
+
+    if count(col(Job.status).not_in(["done", "failed"]), Job.created_at > now() - timedelta(seconds=importer.MAX_SECONDS)):
+        raise HTTPException(429, "Your last import is still going. Try again when it's done.")
+    if count(Job.created_at > now() - timedelta(days=1)) >= PER_DAY:
+        raise HTTPException(429, f"That's {PER_DAY} imports today, the most one person can do. Try again tomorrow.")
 
 
 class ImportIn(SQLModel):
@@ -45,6 +64,7 @@ def start(body: ImportIn, tasks: BackgroundTasks, session: Session = Depends(get
         session.commit()
         session.refresh(job)
         return job
+    check_allowance(session, user)
     job = importer.ImportJob(owner_id=user.id, url=url)
     session.add(job)
     session.commit()
@@ -65,6 +85,7 @@ async def start_file(request: Request, tasks: BackgroundTasks, name: str = "", s
         ext = "txt"
     if ext is None:
         raise HTTPException(415, "Send a PDF, a photo, or a recipe file (YAML, JSON or text).")
+    check_allowance(session, user)
     data = await request.body()
     if not data:
         raise HTTPException(400, "The file is empty.")
