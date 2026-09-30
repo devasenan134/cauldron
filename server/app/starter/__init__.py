@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+import time
 from pathlib import Path
 
 import httpx
@@ -114,7 +115,12 @@ def fetch_photos(session: Session) -> int:
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=30, follow_redirects=True) as http:
         for recipe in todo:
             try:
-                r = http.get(recipe.image_url)
+                # Wikimedia turns away quick bursts (429): go slowly, and wait longer after a refusal.
+                for wait in (0.5, 5, 20, 60):
+                    time.sleep(wait)
+                    r = http.get(recipe.image_url)
+                    if r.status_code != 429:
+                        break
                 r.raise_for_status()
                 kind = r.headers.get("content-type", "").split(";")[0]
                 if not kind.startswith("image/"):
