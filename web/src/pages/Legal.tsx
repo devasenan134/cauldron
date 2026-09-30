@@ -36,6 +36,8 @@ export function Privacy() {
           settings (calorie goal, theme, catalog view).</li>
         <li><b>Imports:</b> the links you import from, and a record of each import. Files you upload to import
           (a PDF, a photo, a recipe file) are kept only until the import finishes, then deleted.</li>
+        <li><b>Feedback you send</b> from Settings: what you wrote, with the app or website version (on the website, your browser too), and in the app your
+          phone's model and Android version.</li>
         <li><b>Your sign-in session:</b> a random token, stored only as a scrambled hash, with when it expires.</li>
         <li><b>Server logs:</b> the server records requests (IP address, time and address asked for) to help fix
           problems. They aren't analysed or shared, and they're cleared whenever the server software is updated.</li>

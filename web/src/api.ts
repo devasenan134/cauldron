@@ -155,6 +155,14 @@ export type Catalog = { mine: RecipeSummary[]; favorites: RecipeSummary[]; folde
 export type TemplateItem = { name: string; amount: string; aisle: string }
 export type GroceryTemplate = { id: number; name: string; items: TemplateItem[] }
 
+export type FeedbackType = 'bug' | 'feature'
+export type Feedback = {
+  id: number; type: FeedbackType; title: string; body: string; meta: Record<string, string>
+  status: 'open' | 'done'; created_at: string
+  /** For the owner: who sent it. */
+  user_name: string | null; user_email: string | null
+}
+
 export type ImportJob = { id: number; url: string; status: string; message: string; recipe_id: number | null }
 
 export type TagGroup = { name: string; tags: string[] }
@@ -274,6 +282,10 @@ export const api = {
   templateFromList: (name: string) => request<GroceryTemplate>('POST', '/grocery/templates/from-list', { name }),
   deleteTemplate: (id: number) => request<{ ok: boolean }>('DELETE', `/grocery/templates/${id}`),
   applyTemplate: (id: number) => request<GroceryItem[]>('POST', `/grocery/templates/${id}/apply`),
+  feedback: () => request<Feedback[]>('GET', '/feedback'),
+  sendFeedback: (f: { type: FeedbackType; title: string; body: string; meta: Record<string, string> }) =>
+    request<Feedback>('POST', '/feedback', f),
+  setFeedbackStatus: (id: number, status: Feedback['status']) => request<Feedback>('PATCH', `/feedback/${id}`, { status }),
   importStatus: () => request<{ ready: boolean; instagram_cookies: boolean }>('GET', '/import/status'),
   startImport: (url: string) => request<ImportJob>('POST', '/import', { url }),
   /** A PDF, a photo of a recipe, or a recipe file (YAML, JSON, text). */

@@ -175,6 +175,20 @@ data class RecipeDetail(
 /** The shared libraries: the starter recipes everyone sees, and Cook Well for the guest list. Read-only. */
 val LIBRARY_SOURCES = setOf("starter", "cookwell")
 
+/** A bug report or feature request (Settings → Feedback). The owner sees who sent it. */
+@Serializable
+data class Feedback(
+    val id: Int,
+    val type: String, // bug | feature
+    val title: String,
+    val body: String = "",
+    val meta: Map<String, String> = emptyMap(),
+    val status: String = "open", // open | done
+    val createdAt: String = "",
+    val userName: String? = null,
+    val userEmail: String? = null,
+)
+
 /** A photo's author and licence, and the page it came from. */
 @Serializable
 data class ImageCredit(val author: String = "", val license: String = "", val licenseUrl: String? = null, val sourceUrl: String? = null)

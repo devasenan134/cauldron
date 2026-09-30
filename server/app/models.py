@@ -181,3 +181,16 @@ class GroceryTemplate(SQLModel, table=True):
     name: str
     items: list[dict] = Field(default_factory=list, sa_type=JSON)  # [{"name", "amount", "aisle"}]
     created_at: datetime = Field(default_factory=now)
+
+
+class Feedback(SQLModel, table=True):
+    """A bug report or feature request sent from Settings. The owner reads them there too."""
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    type: str = "bug"  # bug | feature
+    title: str
+    body: str = ""
+    # Attached by the website or app: version, platform, and on Android the device and Android version.
+    meta: dict = Field(default_factory=dict, sa_type=JSON)
+    status: str = "open"  # open | done
+    created_at: datetime = Field(default_factory=now)

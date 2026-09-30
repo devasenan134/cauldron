@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { api, type Me } from '../api'
 import { ME, useDeleteAccount, useMe, useSignOut } from '../auth'
+import { FeedbackForm, FeedbackInbox } from '../components/Feedback'
 import { Button, PageHeader, SectionTitle } from '../components/ui'
 import { GoalDialog } from './Home'
 import { LegalLinks } from './Legal'
@@ -100,6 +101,13 @@ export default function Settings() {
           <p className="text-stone-500">{app.isPending ? 'Checking…' : 'No app build is available yet.'}</p>
         )}
       </Card>
+
+      <SectionTitle>Feedback</SectionTitle>
+      <Card><FeedbackForm owner={!!me?.is_owner} /></Card>
+      {me?.is_owner && (<>
+        <SectionTitle>Everyone's feedback</SectionTitle>
+        <Card><FeedbackInbox /></Card>
+      </>)}
 
       <SectionTitle>About</SectionTitle>
       <Card>

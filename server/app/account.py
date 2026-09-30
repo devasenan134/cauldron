@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlmodel import Session, col, delete, select, update
 
 from .importer import UPLOAD_DIR, ImportJob
-from .models import (AuthSession, Favorite, Folder, FolderRecipe, Food, GroceryItem, GroceryTemplate, Ingredient,
+from .models import (AuthSession, Favorite, Feedback, Folder, FolderRecipe, Food, GroceryItem, GroceryTemplate, Ingredient,
                      PlanEntry, Recipe, Step, User)
 from .routes.images import IMAGE_DIR
 
@@ -42,6 +42,7 @@ def export(session: Session, user: User) -> dict:
         "folders": [f.model_dump(mode="json") | {"recipe_ids": in_folder.get(f.id, [])} for f in folders],
         "foods": rows(Food, Food.owner_id == user.id),
         "imports": rows(ImportJob, ImportJob.owner_id == user.id),
+        "feedback": rows(Feedback, Feedback.user_id == user.id),
     }
 
 
@@ -73,6 +74,7 @@ def delete_account(session: Session, user: User) -> None:
     session.exec(delete(Recipe).where(Recipe.owner_id == user.id))
     session.exec(delete(Food).where(Food.owner_id == user.id))
     session.exec(delete(ImportJob).where(ImportJob.owner_id == user.id))
+    session.exec(delete(Feedback).where(Feedback.user_id == user.id))
     session.exec(delete(AuthSession).where(AuthSession.user_id == user.id))
     session.delete(user)
     session.commit()

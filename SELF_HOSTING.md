@@ -85,6 +85,13 @@ contact). If other people use your server, change them to describe yours: they'r
 `web/src/pages/Legal.tsx`. Google's OAuth consent screen asks for both addresses when you publish
 the app.
 
+### Feedback
+
+Everyone can send a bug report or feature request from **Settings → Feedback**, on the website or
+in the app (up to 10 a day each; the app adds its version and the phone's model). As the owner,
+you read them in **Settings → Everyone's feedback**, open ones first, and mark them done. They're
+kept in the database, and a user's reports go when they delete their account.
+
 ### Who can sign in
 
 In `.env`:

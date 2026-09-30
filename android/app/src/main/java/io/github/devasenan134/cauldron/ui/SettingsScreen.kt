@@ -155,6 +155,13 @@ fun SettingsScreen(back: () -> Unit) {
             SectionLabel("App updates")
             UpdatesCard()
 
+            SectionLabel("Feedback")
+            Card { FeedbackForm(owner = me?.isOwner == true) }
+            if (me?.isOwner == true) {
+                SectionLabel("Everyone's feedback")
+                Card { FeedbackInbox() }
+            }
+
             SectionLabel("About")
             Card {
                 Text("Cauldron ${app.updates.currentVersion}", fontWeight = FontWeight.SemiBold)

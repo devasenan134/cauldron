@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in Cauldron doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. You can also report bugs without a GitHub account, from
+        Settings → Feedback on the website or in the app.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what happened, and what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a recipe
+        2. Tap …
+        3. See …
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where?
+      options:
+        - Website
+        - Android app
+        - Both
+        - My own self-hosted server
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The app's version is in Settings → App updates. For the website, the browser you use.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, the recipe or link you were importing, server logs if you host it yourself.

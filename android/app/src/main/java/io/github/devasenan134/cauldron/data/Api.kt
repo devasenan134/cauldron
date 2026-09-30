@@ -108,6 +108,15 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun makeVariation(recipeId: Int, body: RecipeIn): Int =
         (post<JsonObject>("/recipes/$recipeId/variation", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)["id"].toString()).toInt()
 
+    // --- feedback
+    /** Yours; for the owner, everyone's. */
+    suspend fun feedback(): List<Feedback> = get("/feedback")
+    suspend fun sendFeedback(type: String, title: String, body: String, meta: Map<String, String>): Feedback = post("/feedback", buildJsonObject {
+        put("type", type); put("title", title); put("body", body)
+        put("meta", buildJsonObject { meta.forEach { (k, v) -> put(k, v) } })
+    })
+    suspend fun setFeedbackStatus(id: Int, status: String): Feedback = patch("/feedback/$id", buildJsonObject { put("status", status) })
+
     // --- importing from videos, recipe pages and files
     suspend fun importStatus(): ImportStatus = get("/import/status")
     suspend fun startImport(url: String): ImportJob = post("/import", buildJsonObject { put("url", url) })

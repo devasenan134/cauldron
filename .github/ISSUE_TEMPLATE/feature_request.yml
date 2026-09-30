@@ -1,0 +1,29 @@
+name: Feature request
+description: An idea for something Cauldron could do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You can also send ideas without a GitHub account, from Settings → Feedback on the website
+        or in the app.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe it, and how you'd use it in your week of cooking.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today?
+      description: Is there a workaround, or another app that does it well?
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where?
+      options:
+        - Website
+        - Android app
+        - Both
