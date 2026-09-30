@@ -155,6 +155,16 @@ export type Catalog = { mine: RecipeSummary[]; favorites: RecipeSummary[]; folde
 export type TemplateItem = { name: string; amount: string; aisle: string }
 export type GroceryTemplate = { id: number; name: string; items: TemplateItem[] }
 
+/** Settings → Recipe libraries (the owner): everyone = the starter recipes, guests = Cook Well. */
+export type LibraryName = 'everyone' | 'guests'
+export type LibraryRecipe = RecipeSummary & {
+  hidden: boolean
+  /** A starter recipe changed in the app: recipes.json no longer rewrites it. */
+  edited: boolean
+  /** One of your recipes you put here: it can go back to your recipes. */
+  yours: boolean
+}
+
 export type FeedbackType = 'bug' | 'feature'
 export type Feedback = {
   id: number; type: FeedbackType; title: string; body: string; meta: Record<string, string>
@@ -282,6 +292,10 @@ export const api = {
   templateFromList: (name: string) => request<GroceryTemplate>('POST', '/grocery/templates/from-list', { name }),
   deleteTemplate: (id: number) => request<{ ok: boolean }>('DELETE', `/grocery/templates/${id}`),
   applyTemplate: (id: number) => request<GroceryItem[]>('POST', `/grocery/templates/${id}/apply`),
+  library: (name: LibraryName) => request<LibraryRecipe[]>('GET', `/admin/libraries/${name}`),
+  setLibraryHidden: (id: number, hidden: boolean) => request<LibraryRecipe>('PATCH', `/admin/libraries/recipes/${id}`, { hidden }),
+  addToLibrary: (name: LibraryName, id: number) => request<LibraryRecipe>('POST', `/admin/libraries/${name}/recipes/${id}`),
+  takeBackFromLibrary: (id: number) => request<{ ok: boolean }>('DELETE', `/admin/libraries/recipes/${id}`),
   feedback: () => request<Feedback[]>('GET', '/feedback'),
   sendFeedback: (f: { type: FeedbackType; title: string; body: string; meta: Record<string, string> }) =>
     request<Feedback>('POST', '/feedback', f),

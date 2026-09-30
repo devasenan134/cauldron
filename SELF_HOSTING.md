@@ -85,6 +85,15 @@ contact). If other people use your server, change them to describe yours: they'r
 `web/src/pages/Legal.tsx`. Google's OAuth consent screen asks for both addresses when you publish
 the app.
 
+### Recipe libraries
+
+As the owner, **Settings → Recipe libraries** shows two lists: **Everyone** (the starter recipes
+every user sees) and **Guests** (a private library, such as Cook Well's, that only you and
+`CAULDRON_ALLOWED_EMAILS` see). There you can edit a recipe, hide it (nobody sees it; it's kept, and
+seeding won't add it back), or put one of your own recipes in a library and later take it back.
+Starter recipes you edit here keep your version when `seed_starter.py --refresh` rewrites the
+others. Imported recipes and versions of guests-only recipes can't go to Everyone.
+
 ### Feedback
 
 Everyone can send a bug report or feature request from **Settings → Feedback**, on the website or

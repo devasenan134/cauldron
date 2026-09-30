@@ -108,6 +108,12 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun makeVariation(recipeId: Int, body: RecipeIn): Int =
         (post<JsonObject>("/recipes/$recipeId/variation", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)["id"].toString()).toInt()
 
+    // --- recipe libraries (the owner): "everyone" or "guests"
+    suspend fun library(name: String): List<LibraryRecipe> = get("/admin/libraries/$name")
+    suspend fun setLibraryHidden(id: Int, hidden: Boolean): LibraryRecipe = patch("/admin/libraries/recipes/$id", buildJsonObject { put("hidden", hidden) })
+    suspend fun addToLibrary(name: String, id: Int): LibraryRecipe = post("/admin/libraries/$name/recipes/$id", JsonObject(emptyMap()))
+    suspend fun takeBackFromLibrary(id: Int) { delete<JsonElement>("/admin/libraries/recipes/$id") }
+
     // --- feedback
     /** Yours; for the owner, everyone's. */
     suspend fun feedback(): List<Feedback> = get("/feedback")

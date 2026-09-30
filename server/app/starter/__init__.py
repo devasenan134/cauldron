@@ -3,7 +3,8 @@
 They live in recipes.json next to this file (Apache-2.0 like the code; the photos are other
 people's, under the licence in each recipe's image_credit). The server adds any that are missing
 when it starts, owned by the owner with source "starter", matched by slug. `--refresh` (or
-loading USDA) writes them all again from the file, finding their foods afresh.
+loading USDA) writes them all again from the file, finding their foods afresh, except the ones the
+owner changed in the app (those keep their version). Ones the owner hid stay hidden.
 
 Each recipe is written like this; ingredients are "quantity | name | note", and a line starting
 with "# " starts a component ("# Tempering"):
@@ -26,7 +27,8 @@ import httpx
 from sqlmodel import Session, delete, select
 
 from ..models import Ingredient, Recipe
-from ..recipe_edit import IngredientIn, RecipeIn, StepIn, save_recipe
+from ..foodlink import food_index
+from ..recipe_edit import IngredientIn, RecipeIn, StepIn, guess_food, relink_recipe, save_recipe
 from ..routes.images import IMAGE_DIR
 from ..routes.recipes import STARTER_SOURCE
 from ..users import owner
@@ -91,6 +93,10 @@ def seed(session: Session, refresh: bool = False) -> int:
         recipe = existing.get(slug)
         if recipe is not None and not refresh:
             continue
+        if recipe is not None and recipe.edited:
+            # Changed in the app: keep that version, only find foods for ingredients that have none.
+            relink_foods(session, recipe)
+            continue
         if recipe is None:
             recipe = Recipe(owner_id=owner_id, source=STARTER_SOURCE, title=entry["title"], slug=slug)
         else:
@@ -106,6 +112,21 @@ def seed(session: Session, refresh: bool = False) -> int:
             preps[recipe.id] = recipe
         written += 1
     return written
+
+
+def relink_foods(session: Session, recipe: Recipe) -> None:
+    """Give food-less ingredients a food (after USDA is loaded) and work their weights out again."""
+    index = food_index(session)
+    changed = set()
+    for ing in session.exec(select(Ingredient).where(Ingredient.recipe_id == recipe.id)):
+        if ing.food_id is None and ing.prep_id is None and (food := guess_food(session, ing.name, index, owner_id=recipe.owner_id)):
+            ing.food_id = food.id
+            session.add(ing)
+            changed.add(ing.id)
+    if changed:
+        session.flush()
+        relink_recipe(session, recipe, changed)
+    session.commit()
 
 
 def fetch_photos(session: Session) -> int:

@@ -66,6 +66,7 @@ import io.github.devasenan134.cauldron.ui.ProfileScreen
 import io.github.devasenan134.cauldron.ui.RecipeEditorScreen
 import io.github.devasenan134.cauldron.ui.RecipeScreen
 import io.github.devasenan134.cauldron.ui.RecipesScreen
+import io.github.devasenan134.cauldron.ui.LibrariesScreen
 import io.github.devasenan134.cauldron.ui.SettingsScreen
 import io.github.devasenan134.cauldron.ui.SignInScreen
 import io.github.devasenan134.cauldron.ui.TabItem
@@ -127,11 +128,12 @@ private sealed interface Page {
     data class Folder(val id: Int) : Page
     data object Grocery : Page
     data object Settings : Page
+    data object Libraries : Page
     data object Ingredients : Page
     data class Food(val id: Int?) : Page // null = a new food of your own
 
     fun save(): String = when (this) {
-        is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}:${from ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"
+        is Recipe -> "recipe:$id"; is Edit -> "edit:${id ?: ""}:${from ?: ""}"; is Folder -> "folder:$id"; Grocery -> "grocery"; Settings -> "settings"; Libraries -> "libraries"
         Ingredients -> "ingredients"; is Food -> "food:${id ?: ""}"
     }
 
@@ -139,7 +141,7 @@ private sealed interface Page {
         fun load(s: String): Page? = s.split(":").let { p ->
             when (p[0]) {
                 "recipe" -> Recipe(p[1].toInt()); "edit" -> Edit(p[1].toIntOrNull(), p.getOrNull(2)?.toIntOrNull()); "folder" -> Folder(p[1].toInt())
-                "grocery" -> Grocery; "settings" -> Settings; "ingredients" -> Ingredients; "food" -> Food(p[1].toIntOrNull()); else -> null
+                "grocery" -> Grocery; "settings" -> Settings; "libraries" -> Libraries; "ingredients" -> Ingredients; "food" -> Food(p[1].toIntOrNull()); else -> null
             }
         }
     }
@@ -350,7 +352,8 @@ private fun PageContent(page: Page, back: () -> Unit, open: (Page) -> Unit, open
             deleted = { toTab(Tabs.RECIPES) })
         is Page.Folder -> FolderScreen(page.id, back = back, openRecipe = openRecipe)
         Page.Grocery -> GroceryScreen(openPlan = { toTab(Tabs.PLAN) }, back = back)
-        Page.Settings -> SettingsScreen(back = back)
+        Page.Settings -> SettingsScreen(back = back, openLibraries = { open(Page.Libraries) })
+        Page.Libraries -> LibrariesScreen(back = back, openRecipe = openRecipe, edit = { open(Page.Edit(it)) })
         Page.Ingredients -> IngredientsScreen(back = back, openFood = { open(Page.Food(it)) }, openRecipe = openRecipe)
         is Page.Food -> FoodScreen(page.id, back = back, openRecipe = openRecipe, created = { replace(Page.Food(it)) })
     }
