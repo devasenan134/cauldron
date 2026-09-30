@@ -20,7 +20,7 @@ export function Privacy() {
 
       <H2>Who runs it</H2>
       <P>
-        Cauldron is run by one person, Devasenan Murugan, in Canada. He is also the person in charge of protecting
+        Cauldron is run by one person, Devasenan Murugan, in Canada. Devasenan is also the person in charge of protecting
         personal information, as Québec's privacy law (Law 25) requires. Questions, requests and complaints go
         to <Mail />.
       </P>
@@ -135,7 +135,7 @@ export function Terms() {
 
       <H2>The service</H2>
       <UL>
-        <li>Cauldron is free. It's run by one person, Devasenan Murugan, on his own hardware.</li>
+        <li>Cauldron is free. It's run by one person, Devasenan Murugan, on a home server.</li>
         <li>It's provided as it is, with no warranty. It may have bugs, be down now and then, change, or one day
           close. If it's ever going to close, you'll be told ahead of time, so you can download your data.</li>
         <li>Calories and macros are estimates from USDA data and your recipes. They're a guide, not medical or

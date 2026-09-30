@@ -56,7 +56,38 @@ function SignIn() {
         {signIn.isError && <p className="mt-4 text-sm text-danger">{friendly(signIn.error)}</p>}
         <LegalLinks className="mt-8" />
       </div>
+      <About />
     </div>
+  )
+}
+
+const FEATURES: [string, string, string][] = [
+  ['📖', 'Your recipe book', 'Write your recipes, start from 135 home recipes, or import one from a YouTube video, an Instagram Reel, a web page, a PDF or a photo.'],
+  ['🔥', 'Calories and macros', 'Every ingredient, dish and portion, from USDA nutrition data. Log what you eat against a daily goal.'],
+  ['🗓️', 'Meal planner', 'Drag recipes onto the week. The grocery list writes itself, sorted by aisle, and works offline on your phone.'],
+  ['🍱', 'Batch cooking', 'Cook once, eat for days: Cauldron tracks what is in the fridge and how many portions are left.'],
+]
+
+/** What Cauldron is, for people who haven't signed in yet (and Google's review of the sign-in page). */
+function About() {
+  return (
+    <section className="mx-auto w-full max-w-md pb-4 pt-14">
+      <h2 className="font-display text-2xl font-bold">What Cauldron does</h2>
+      <div className="mt-4 grid gap-3">
+        {FEATURES.map(([emoji, title, body]) => (
+          <div key={title} className="rounded-3xl bg-paper p-5 ring-1 ring-stone-200">
+            <p className="text-2xl">{emoji}</p>
+            <p className="mt-2 font-semibold">{title}</p>
+            <p className="mt-1 text-sm text-stone-500">{body}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-5 text-sm text-stone-500">
+        Free, with a website and an Android app. Sign in with Google: Cauldron only gets your name and email address,
+        to keep your recipes and plans in your account (see the <a href="/privacy" className="font-semibold text-ink underline">privacy policy</a>).
+        Cauldron is open source, and you can host your own copy: <a href="https://github.com/devasenan134/cauldron" className="font-semibold text-ink underline">source code on GitHub</a>.
+      </p>
+    </section>
   )
 }
 
