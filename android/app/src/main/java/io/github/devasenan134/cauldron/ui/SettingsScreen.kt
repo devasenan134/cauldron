@@ -127,13 +127,23 @@ fun SettingsScreen(back: () -> Unit) {
             Card {
                 Text("Cauldron ${app.updates.currentVersion}", fontWeight = FontWeight.SemiBold)
                 Text("Recipes, meal plans, batch cooking and groceries.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("© 2026 Devasenan Murugan. All rights reserved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                Text("© 2026 Devasenan Murugan. Open source under the Apache License 2.0, and free to host yourself.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                val context = LocalContext.current
+                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { openUrl(context, COFFEE_URL) }, colors = ButtonDefaults.buttonColors(containerColor = C.go, contentColor = C.onGo)) {
+                        Text("☕ Buy me a coffee", fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(onClick = { openUrl(context, SOURCE_URL) }) { Text("Source code", fontWeight = FontWeight.Bold, color = C.ink) }
+                }
             }
             Spacer(Modifier.height(32.dp))
         }
     }
     if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { kcal -> editingGoal = false; app.scope.launch { runCatching { app.setKcalGoal(kcal) } } }
 }
+
+private const val COFFEE_URL = "https://buymeacoffee.com/devaa"
+private const val SOURCE_URL = "https://github.com/devasenan134/cauldron"
 
 /** What the updates card is doing. */
 private sealed interface UpdateStep {

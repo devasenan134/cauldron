@@ -5,6 +5,9 @@ import { ME, useMe, useSignOut } from '../auth'
 import { Button, PageHeader, SectionTitle } from '../components/ui'
 import { GoalDialog } from './Home'
 
+const COFFEE_URL = 'https://buymeacoffee.com/devaa'
+const SOURCE_URL = 'https://github.com/devasenan134/cauldron'
+
 export default function Settings() {
   const me = useMe().data
   const signOut = useSignOut()
@@ -91,7 +94,13 @@ export default function Settings() {
       <Card>
         <p className="font-semibold">Cauldron</p>
         <p className="text-sm text-stone-500">Recipes, meal plans, batch cooking and groceries.</p>
-        <p className="mt-2 text-sm text-stone-500">© 2026 Devasenan Murugan. All rights reserved.</p>
+        <p className="mt-2 text-sm text-stone-500">
+          © 2026 Devasenan Murugan. Open source under the Apache License 2.0, and free to host yourself.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a href={COFFEE_URL} target="_blank" rel="noreferrer"><Button variant="accent">☕ Buy me a coffee</Button></a>
+          <a href={SOURCE_URL} target="_blank" rel="noreferrer"><Button variant="ghost">Source code</Button></a>
+        </div>
       </Card>
 
       {editingGoal && <GoalDialog goal={goal} onClose={() => setEditingGoal(false)} />}

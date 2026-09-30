@@ -6,6 +6,11 @@ plugins {
 
 // The release signing key stays outside the repository, in ~/.gradle/gradle.properties:
 //   CAULDRON_KEYSTORE, CAULDRON_KEYSTORE_PASSWORD, CAULDRON_KEY_ALIAS
+// Without one, builds are signed with this computer's Android debug key.
+//
+// Self-hosting: point a build at your own server and Google project with
+//   -PapiUrl=https://cauldron.example.com -PgoogleClientId=<your web client ID> -PappId=<your.package.name>
+// (see SELF_HOSTING.md). The defaults build the app for cauldron.craftingtable.cc.
 fun privateSetting(name: String): String? = (project.findProperty(name) as String?)?.takeIf { it.isNotBlank() }
 
 android {
@@ -13,18 +18,18 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.devasenan134.cauldron"
+        applicationId = privateSetting("appId") ?: "io.github.devasenan134.cauldron"
         minSdk = 28
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.10.0"
+        versionCode = 17
+        versionName = "0.11.0"
 
         // -PapiUrl=http://10.0.2.2:8766 points a build at a local test server.
-        buildConfigField("String", "API_URL", "\"${project.findProperty("apiUrl") ?: "https://cauldron.craftingtable.cc"}\"")
+        buildConfigField("String", "API_URL", "\"${privateSetting("apiUrl") ?: "https://cauldron.craftingtable.cc"}\"")
         // Google sign-in asks for an ID token meant for the server (its "web" OAuth client), which the
         // server checks. Not a secret: the website hands it to every visitor too.
-        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID",
-            "\"880824039451-klph2c1nnqmtp52ai5ma9j1eqj134ke2.apps.googleusercontent.com\"")
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"${privateSetting("googleClientId")
+            ?: "880824039451-klph2c1nnqmtp52ai5ma9j1eqj134ke2.apps.googleusercontent.com"}\"")
     }
 
     signingConfigs {
@@ -46,7 +51,7 @@ android {
             manifestPlaceholders["cleartext"] = "true" // for a plain-http test server
             // -PdevToken=<session token> starts a test build signed in, without Google (emulator testing).
             buildConfigField("String", "DEV_TOKEN", "\"${project.findProperty("devToken") ?: ""}\"")
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         release {
             manifestPlaceholders["cleartext"] = "false"
@@ -54,7 +59,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

@@ -1,98 +1,90 @@
 # Cauldron
 
-A personal cooking app: a recipe library, a drag-and-drop meal planner that builds the
-grocery list, calorie tracking per ingredient, dish and portion, and batch-cook
-tracking (portions left). There's a website and an Android app, backed by one API
-server on craftingtable.
+A cooking app that keeps the whole week in one place: your recipes, a drag-and-drop
+meal planner that writes the grocery list, calories per ingredient, dish and portion,
+and batch cooking (what's in the fridge, how many portions are left).
 
-## Layout
+There's a website and an Android app, and it's open source: use the hosted one, or run
+your own.
 
-- `server/`: FastAPI + SQLite (SQLModel). Python 3.12+, managed with `uv`.
-- `web/`: the website: React + TypeScript (Vite, Tailwind, TanStack Query, dnd-kit).
-- `android/`: the Android app: Kotlin + Jetpack Compose (package `io.github.devasenan134.cauldron`).
-- `data/`: the local database and raw imports (gitignored).
+<a href="https://buymeacoffee.com/devaa"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-%E2%98%95-FFDD00?style=flat-square" alt="Buy me a coffee"></a>
 
-## Run locally
+## What it does
+
+- **Recipes**: write your own, or import them from a YouTube video, an Instagram Reel,
+  a recipe web page, a PDF or a photo (Gemini reads it and writes the recipe).
+- **Calories and macros** for every ingredient, dish and portion, from USDA FoodData
+  Central. Fix any weight or food by hand, or add your own foods.
+- **Planner**: drag recipes onto days and meals; the grocery list builds itself, sorted
+  by aisle, and works offline on your phone.
+- **Batch cooking and prep**: cook once, eat for days. Leftovers go to the fridge and
+  count down as you eat them; prepped ingredients (rice, sauces) are tracked by weight.
+- **Meal log**: mark meals eaten or eaten out, and see calories against your daily goal.
+
+## Use it
+
+- **Website**: <https://cauldron.craftingtable.cc>. Sign in with Google.
+- **Android**: download the APK from the website's Settings page or from
+  [Releases](https://github.com/devasenan134/cauldron/releases). The app keeps itself up
+  to date.
+
+The hosted service runs on my own hardware at home, for free. If you find it useful, you
+can [buy me a coffee](https://buymeacoffee.com/devaa). ☕
+
+## Host it yourself
+
+One Docker container and a free Google Cloud project. See **[SELF_HOSTING.md](SELF_HOSTING.md)**
+for the server, sign-in, recipe imports and building the Android app for your server.
+
+## Development
+
+- `server/`: FastAPI + SQLite (SQLModel), Python 3.12+, managed with [uv](https://docs.astral.sh/uv/).
+- `web/`: React + TypeScript (Vite, Tailwind, TanStack Query, dnd-kit).
+- `android/`: Kotlin + Jetpack Compose.
+- `data/`: the database, photos and downloads (not in git).
 
 ```sh
 cd server
-uv run python scripts/fetch_cookwell.py    # download cookwell.com recipes (resumable, 1 req/s)
-# USDA FoodData Central: put the Foundation + SR Legacy JSON zips from
-# https://fdc.nal.usda.gov/download-datasets in data/usda/ and unzip them
-uv run python scripts/load_usda.py         # load ~8k foods with nutrients per 100 g
-uv run python scripts/import_cookwell.py   # load recipes (skips ones already there)
-uv run uvicorn app.main:app --reload --port 8765
+uv run python scripts/load_usda.py         # nutrition data: downloads USDA FoodData Central once
+CAULDRON_OWNER_EMAIL=you@gmail.com CAULDRON_GOOGLE_CLIENT_ID=… \
+    uv run uvicorn app.main:app --reload --port 8765
 
 cd ../web
 npm install
 npm run dev        # http://localhost:5173 (proxies /api to :8765)
 ```
 
-API docs: http://localhost:8765/docs. After `npm run build`, the API server also
-serves the website at http://localhost:8765.
+API docs are at http://localhost:8765/docs. After `npm run build`, the API server also
+serves the website at http://localhost:8765. Every setting is listed in
+[`.env.example`](.env.example).
 
-## Deploy (craftingtable)
-
-`docker compose up -d --build` builds the website and server into one image,
-listening on port 8130. The database lives in `./data/cauldron.db` next to the
-compose file, so a backup is a copy of that file.
-
-## Android app
+### Android
 
 ```sh
 cd android
-./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk
-```
-
-Builds are signed with the Cauldron key (`CAULDRON_KEYSTORE`, `CAULDRON_KEYSTORE_PASSWORD`,
-`CAULDRON_KEY_ALIAS` in `~/.gradle/gradle.properties`), debug builds too: Google sign-in
-only answers apps whose signing-key SHA-1 is registered as an Android OAuth client in the
-same Google Cloud project as the website's client. The app sends its session as
-`Authorization: Bearer`; the website uses a cookie.
-
-Testing against a local server on the emulator, without Google:
-
-```sh
 ./gradlew assembleDebug -PapiUrl=http://10.0.2.2:8765 -PdevToken=<a session token>
 ```
 
-To release a new version, bump `versionCode` and `versionName` in
-`android/app/build.gradle.kts`, then:
+`-PdevToken` starts a debug build already signed in, which skips Google (handy on the
+emulator; `10.0.2.2` is your computer as seen from the emulator). The app sends its
+session as `Authorization: Bearer`; the website uses a cookie. For builds that sign in
+with Google, see [SELF_HOSTING.md](SELF_HOSTING.md#5-the-android-app-optional).
 
-```sh
-scripts/release-android.sh "- What's new"
-```
+### Nutrition
 
-It uploads the APK and notes to `data/apk/` on the server (the app checks
-`/api/app/latest` and updates itself from there, since the GitHub repository is
-private) and creates the GitHub release.
+Each ingredient links to a food and gets a weight in grams. The weight comes from the
+recipe, from "parts" in the same component, from a count times a unit weight (1 clove,
+2 slices), or from a typical amount for vague quantities ("a drizzle"). "To taste" and
+ingredients with no amount are left out and listed. Any ingredient's food or grams can be
+set by hand, and hand edits are never overwritten.
 
-The grocery list works offline: changes apply at once and sync in order when the
-server is reachable again.
+## Contributing
 
-## Nutrition
-
-Each ingredient links to a food (`app/foodmap.py`, hand-checked for every
-ingredient name in the Cook Well recipes) and gets a weight in grams. The weight
-comes from the recipe, from "parts" in the same component, from a count times a
-unit weight (1 clove, 2 slices), or from a typical amount for vague quantities
-("a drizzle"). "To taste" and ingredients with no amount are left out and listed.
-You can set any ingredient's food or grams by hand (`PATCH /ingredients/{id}`), and
-hand edits are never overwritten.
-
-## Roadmap
-
-1. ✅ Backend, database, Cook Well recipe import
-2. ✅ Nutrition: USDA FoodData Central per ingredient → dish → serving
-3. ✅ Website: library, planner (drag-and-drop), grocery list
-4. ✅ Batch cooking: portions left, calories per portion
-5. Import from YouTube / Reels / Shorts (yt-dlp + transcript + LLM)
-6. ✅ Android app (share-sheet import comes with step 5)
-7. ✅ Google sign-in and friends
+Issues and pull requests are welcome. Contributions are accepted under the same licence
+(Apache-2.0, section 5). To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-Proprietary. Copyright (c) 2026 Devasenan Murugan. All rights reserved. See [LICENSE](LICENSE).
-
-The Cook Well recipe library (text and photos © Ethan Chlebowski / Cook Well) is
-imported for personal use only and must not ship in a commercial release.
+Copyright 2026 Devasenan Murugan. Licensed under the [Apache License 2.0](LICENSE): you can
+use, change, host and sell it, as long as you keep the copyright and [NOTICE](NOTICE) and
+say what you changed.

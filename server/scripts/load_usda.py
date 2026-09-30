@@ -1,19 +1,25 @@
 """Load USDA FoodData Central (Foundation + SR Legacy JSON) into the food table.
 
-Download the two JSON zips from https://fdc.nal.usda.gov/download-datasets into
-data/usda/ and unzip them first. Re-running updates foods in place.
+The two JSON zips from https://fdc.nal.usda.gov/download-datasets go in data/usda/ (next to the
+database); if they aren't there, they're downloaded and unzipped. Re-running updates foods in place.
+USDA data is public domain.
 """
 import json
 import sys
+import urllib.request
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlmodel import Session, select  # noqa: E402
 
-from app.db import engine, init_db  # noqa: E402
+from app.db import DB_PATH, engine, init_db  # noqa: E402
 from app.models import Food  # noqa: E402
 
-USDA = Path(__file__).resolve().parents[2] / "data" / "usda"
+USDA = DB_PATH.parent / "usda"
+# The releases this was built against; a newer Foundation release works too (put its zip in data/usda/).
+DOWNLOADS = {"foundation": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip",
+             "sr_legacy": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip"}
 FIELDS = {1003: "protein", 1004: "fat", 1005: "carbs", 1079: "fiber", 2000: "sugar", 1093: "sodium_mg"}
 
 
@@ -41,15 +47,30 @@ def portions(food: dict) -> list[dict]:
     return out
 
 
+def dataset(name: str) -> Path:
+    """The newest FoodData_Central_<name>_food_json_*.json, unzipping or downloading it if needed."""
+    pattern = f"FoodData_Central_{name}_food_json_*"
+    USDA.mkdir(parents=True, exist_ok=True)
+    if not list(USDA.glob(pattern + ".json")):
+        zips = sorted(USDA.glob(pattern + ".zip"))
+        if not zips:
+            url = DOWNLOADS[name]
+            print(f"downloading {url}")
+            zips = [USDA / url.rsplit("/", 1)[1]]
+            urllib.request.urlretrieve(url, zips[0])
+        with zipfile.ZipFile(zips[-1]) as z:
+            z.extractall(USDA)
+    return max(USDA.glob(pattern + ".json"))
+
+
 def main() -> None:
     init_db()
-    sets = [("usda_foundation", "FoundationFoods", "FoodData_Central_foundation_food_json_*.json"),
-            ("usda_sr_legacy", "SRLegacyFoods", "FoodData_Central_sr_legacy_food_json_*.json")]
+    sets = [("usda_foundation", "FoundationFoods", "foundation"), ("usda_sr_legacy", "SRLegacyFoods", "sr_legacy")]
     with Session(engine) as session:
         existing = {f.fdc_id: f for f in session.exec(select(Food).where(Food.fdc_id.is_not(None)))}
         n = 0
-        for source, key, pattern in sets:
-            path = max(USDA.glob(pattern))
+        for source, key, name in sets:
+            path = dataset(name)
             for raw in filter(None, json.loads(path.read_text())[key]):
                 food = existing.get(raw["fdcId"]) or Food(fdc_id=raw["fdcId"], name="", source=source)
                 food.name = raw["description"]

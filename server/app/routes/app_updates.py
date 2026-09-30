@@ -11,7 +11,7 @@ from ..db import DB_PATH
 router = APIRouter(prefix="/app")
 
 # Android app releases: cauldron-<version>.apk, with optional notes in cauldron-<version>.md.
-# The app's GitHub repository is private, so the app gets its updates from here instead.
+# The app updates itself from its own server, so self-hosted builds follow their server's releases.
 APK_DIR = Path(os.environ.get("CAULDRON_APK_DIR", DB_PATH.parent / "apk"))
 APK_NAME = re.compile(r"^cauldron-(\d+(?:\.\d+)*)\.apk$")
 
