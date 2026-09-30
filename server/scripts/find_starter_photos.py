@@ -75,12 +75,19 @@ def candidates(http: httpx.Client, query: str) -> list[dict]:
 
 
 def pick(recipe: dict, found: list[dict]) -> dict | None:
-    """The first result that names the dish (in its file name or description)."""
-    want = words(recipe.get("photo_query") or recipe["title"])
+    """The result that names the most of the dish (title and search phrase), in its file name or
+    description; ties go to the search's own order. None if nothing names the dish."""
+    title = words(recipe["title"].split("(")[0])
+    want = title | words(recipe.get("photo_query") or "")
+    best, score = None, 0
     for c in found:
-        if want and len(want & words(c["title"] + " " + c["description"])) >= min(2, len(want)):
-            return c
-    return None
+        have = words(c["title"] + " " + c["description"])
+        if not title & have:  # it must name the dish itself, not just "South Indian"
+            continue
+        s = 2 * len(title & have) + len(want & have)
+        if s > score:
+            best, score = c, s
+    return best
 
 
 def contact_sheet(rows: list[tuple[dict, dict | None]]) -> str:
