@@ -17,6 +17,8 @@ from .users import claim_placeholder
 
 # Built website (web/dist); served at / when present.
 WEB_DIST = Path(os.environ.get("CAULDRON_WEB", Path(__file__).resolve().parents[2] / "web" / "dist"))
+# Public pages built into plain HTML by the website's build (web/src/prerender.tsx).
+PRERENDERED = {"": "index", "privacy": "privacy", "terms": "terms"}
 
 
 @asynccontextmanager
@@ -60,4 +62,6 @@ if WEB_DIST.is_dir():
         file = (WEB_DIST / path).resolve()
         if path and file.is_file() and WEB_DIST.resolve() in file.parents:
             return FileResponse(file)
-        return FileResponse(WEB_DIST / "index.html")
+        # The home page, privacy policy and terms come already built, so they read without scripts.
+        built = WEB_DIST / "prerendered" / f"{PRERENDERED.get(path.strip('/'), '')}.html"
+        return FileResponse(built if built.name != ".html" and built.is_file() else WEB_DIST / "index.html")

@@ -48,6 +48,29 @@ export function Privacy() {
         secret.
       </P>
 
+      <H2>Google user data</H2>
+      <P>
+        When you choose "Continue with Google", Google shares three things with Cauldron: your name, your email
+        address and whether Google has verified that address (the basic <code>openid</code>, <code>email</code> and
+        <code>profile</code> permissions). Cauldron asks for nothing else from your Google account: not your contacts,
+        Gmail, Drive, calendar or photos.
+      </P>
+      <UL>
+        <li><b>How it's used:</b> your email identifies your account, so your recipes and plans are there each time
+          you sign in, on the website and in the app; your name is shown in the app. Nothing else.</li>
+        <li><b>How it's stored:</b> in Cauldron's database on its server, with the rest of your account.</li>
+        <li><b>Sharing:</b> Google user data is never sold, never used for ads, and never shared with anyone, except
+          when the law requires it.</li>
+        <li><b>Deleting it:</b> deleting your account (Settings → Account) removes your name and email for good. You can
+          also remove Cauldron's access in your <A href="https://myaccount.google.com/connections">Google account
+          settings</A>.</li>
+      </UL>
+      <P>
+        Cauldron's use of information received from Google APIs follows
+        the <A href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data
+        Policy</A>, including the Limited Use requirements.
+      </P>
+
       <H2>Imports and Google's Gemini</H2>
       <P>
         When you import a recipe, what you import (the link, the web page's text, the PDF, photo or file, or the

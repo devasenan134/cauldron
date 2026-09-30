@@ -9,8 +9,12 @@
     <script>
       // Apply the saved theme before anything draws (no flash of the wrong one).
       try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t } catch {}
+      // The public pages arrive already built (for readers without scripts); someone signed in
+      // shouldn't glimpse the sign-in page while the app starts.
+      try { if (localStorage.getItem('signedIn') && location.pathname === '/') document.documentElement.dataset.signedIn = '' } catch {}
     </script>
     <title>Cauldron</title>
+    <style>[data-signed-in] [data-prerendered] { display: none }</style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500..800&family=Inter:wght@400..700&display=swap" rel="stylesheet" />
