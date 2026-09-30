@@ -1,11 +1,16 @@
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlmodel import Field, Session, SQLModel
+from fastapi.responses import JSONResponse
+from sqlmodel import Field, Session, SQLModel, col, select
+
+from .. import account
 
 from ..auth import COOKIE, GOOGLE_CLIENT_ID, SESSION_DAYS, AuthError, sign_in, sign_out, verify_google
 from ..db import get_session
 from ..deps import current_user, is_owner, session_token
+from ..importer import ImportJob
 from ..models import User
 
 router = APIRouter(prefix="/auth")
@@ -78,5 +83,26 @@ def update_me(body: MePatch, session: Session = Depends(get_session), user: User
 @router.post("/logout")
 def logout(response: Response, session: Session = Depends(get_session), token: str | None = Depends(session_token)):
     sign_out(session, token)
+    response.delete_cookie(COOKIE, httponly=True, secure=True, samesite="lax")
+    return {"ok": True}
+
+
+@router.get("/me/export")
+def export_me(session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """All your data as a JSON file: recipes, plans, lists, foods, folders and imports."""
+    name = f"cauldron-{date.today().isoformat()}.json"
+    return JSONResponse(account.export(session, user), headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.delete("/me")
+def delete_me(response: Response, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    """Delete your account and everything in it. There's no undo."""
+    if is_owner(user):
+        raise HTTPException(403, "the owner's account can't be deleted here: it holds the shared recipes")
+    running = session.exec(select(ImportJob).where(ImportJob.owner_id == user.id,
+                                                   col(ImportJob.status).not_in(("done", "failed")))).first()
+    if running:
+        raise HTTPException(409, "An import is still running. Try again when it's done.")
+    account.delete_account(session, user)
     response.delete_cookie(COOKIE, httponly=True, secure=True, samesite="lax")
     return {"ok": True}

@@ -165,10 +165,33 @@ data class RecipeDetail(
     val yieldGrams: Double? = null,
     /** A prep: your recipes that use it. */
     val usedIn: List<RecipeRef> = emptyList(),
+    /** Who took the photo, when it isn't yours (the starter recipes' photos). */
+    val imageCredit: ImageCredit? = null,
 ) {
-    /** Your own recipe (not the shared library): you can rewrite or delete it. */
-    val isMine get() = canEdit && source != "cookwell"
+    /** Your own recipe (not one of the shared libraries): you can rewrite or delete it. */
+    val isMine get() = canEdit && source !in LIBRARY_SOURCES
 }
+
+/** The shared libraries: the starter recipes everyone sees, and Cook Well for the guest list. Read-only. */
+val LIBRARY_SOURCES = setOf("starter", "cookwell")
+
+/** A bug report or feature request (Settings → Feedback). The owner sees who sent it. */
+@Serializable
+data class Feedback(
+    val id: Int,
+    val type: String, // bug | feature
+    val title: String,
+    val body: String = "",
+    val meta: Map<String, String> = emptyMap(),
+    val status: String = "open", // open | done
+    val createdAt: String = "",
+    val userName: String? = null,
+    val userEmail: String? = null,
+)
+
+/** A photo's author and licence, and the page it came from. */
+@Serializable
+data class ImageCredit(val author: String = "", val license: String = "", val licenseUrl: String? = null, val sourceUrl: String? = null)
 
 /** A food per 100 g, as you see it: your own version when you've edited it ([edited]), or one you added ([own]). */
 @Serializable

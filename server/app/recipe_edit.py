@@ -149,8 +149,13 @@ def guess_food(session: Session, name: str, index: dict[str, Food], hint: str | 
     return None
 
 
-def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
-    """Write body into recipe (new or existing), replacing its ingredients and steps."""
+def save_recipe(session: Session, recipe: Recipe, body: RecipeIn, preps: dict[int, Recipe] | None = None) -> Recipe:
+    """Write body into recipe (new or existing), replacing its ingredients and steps.
+
+    preps: the prepped ingredients it may use (default: those its owner can see).
+    """
+    if body.image_url != recipe.image_url:
+        recipe.image_credit = None  # a new photo: the old one's credit doesn't apply
     fields = body.model_dump(exclude={"ingredients", "steps"})
     fields["yield_grams"] = body.yield_grams if body.yield_grams and body.yield_grams > 0 else None
     fields["title"] = fields["title"].strip()
@@ -171,7 +176,7 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
 
     ensure_custom_foods(session)
     index = food_index(session)
-    preps = visible_preps(session, recipe.owner_id)
+    preps = visible_preps(session, recipe.owner_id) if preps is None else preps
     by_title = {_stem(r.title.lower().strip()): r.id for r in preps.values() if r.id != recipe.id}
     ings = []
     hints: dict[int, float] = {}  # ingredient index -> weight guess from an import
@@ -214,11 +219,12 @@ def save_recipe(session: Session, recipe: Recipe, body: RecipeIn) -> Recipe:
 
 
 def visible_preps(session: Session, owner_id: int) -> dict[int, Recipe]:
-    """Prepped-ingredient recipes this user can use: their own and the shared library's."""
+    """Prepped-ingredient recipes this user can use: their own and the libraries they see."""
     from .models import User
-    from .routes.recipes import visible
+    from .routes.recipes import STARTER_SOURCE, visible
     user = session.get(User, owner_id)
-    stmt = select(Recipe).where(Recipe.is_prep == True, visible(user) if user else Recipe.owner_id == owner_id)  # noqa: E712
+    stmt = select(Recipe).where(Recipe.is_prep == True, visible(user) if user else  # noqa: E712
+                                (Recipe.owner_id == owner_id) | (Recipe.source == STARTER_SOURCE))
     return {r.id: r for r in session.exec(stmt)}
 
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type Ingredient, type Meal, type RecipeDetail as Recipe } from '../api'
+import { api, LIBRARY_SOURCES, type Ingredient, type Meal, type RecipeDetail as Recipe } from '../api'
 import { MealPicker, mealNow } from '../components/MealLog'
 import { today } from '../dates'
 import { refreshPlan } from '../plan'
@@ -46,17 +46,20 @@ export default function RecipeDetail() {
         <div className="flex items-center gap-2">
           <FavoriteButton r={r} />
           <FolderButton r={r} />
-          {/* Your own recipes can be rewritten. */}
-          {r.can_edit && r.source !== 'cookwell' && (
+          {/* Your own recipes can be rewritten (the libraries can't). */}
+          {r.can_edit && !LIBRARY_SOURCES.includes(r.source) && (
             <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
           )}
         </div>
       </div>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        <div className="relative overflow-hidden rounded-[32px] bg-sand lg:sticky lg:top-24 lg:self-start">
-          {r.image_url ? <img src={thumb(r.image_url, 1000, 1000)} alt="" className="aspect-square w-full object-cover" />
-            : <div className="grid aspect-[4/3] w-full place-items-center bg-ember-soft text-7xl">🍳</div>}
+        <div className="lg:sticky lg:top-24 lg:self-start">
+          <div className="relative overflow-hidden rounded-[32px] bg-sand">
+            {r.image_url ? <img src={thumb(r.image_url, 1000, 1000)} alt="" className="aspect-square w-full object-cover" />
+              : <div className="grid aspect-[4/3] w-full place-items-center bg-ember-soft text-7xl">🍳</div>}
+          </div>
+          {r.image_url && r.image_credit && <PhotoCredit credit={r.image_credit} />}
         </div>
         <div>
           <h1 className="font-display text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">{r.title}</h1>
@@ -495,6 +498,18 @@ function FolderButton({ r }: { r: Recipe }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** "Photo: Jane Doe, CC BY-SA 4.0", linking to the photo's page and its licence. */
+function PhotoCredit({ credit }: { credit: NonNullable<Recipe['image_credit']> }) {
+  const link = 'underline decoration-stone-300 underline-offset-2 hover:text-ink'
+  return (
+    <p className="mt-2 px-3 text-xs text-stone-500">
+      Photo: {credit.source_url ? <a href={credit.source_url} target="_blank" rel="noreferrer" className={link}>{credit.author}</a> : credit.author}
+      {', '}
+      {credit.license_url ? <a href={credit.license_url} target="_blank" rel="noreferrer" className={link}>{credit.license}</a> : credit.license}
+    </p>
   )
 }
 

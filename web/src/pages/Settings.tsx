@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { api, type Me } from '../api'
-import { ME, useMe, useSignOut } from '../auth'
+import { ME, useDeleteAccount, useMe, useSignOut } from '../auth'
+import { FeedbackForm, FeedbackInbox } from '../components/Feedback'
 import { Button, PageHeader, SectionTitle } from '../components/ui'
 import { GoalDialog } from './Home'
+import { LegalLinks } from './Legal'
 
 const COFFEE_URL = 'https://buymeacoffee.com/devaa'
 const SOURCE_URL = 'https://github.com/devasenan134/cauldron'
@@ -13,6 +15,7 @@ export default function Settings() {
   const signOut = useSignOut()
   const app = useQuery({ queryKey: ['app-latest'], queryFn: api.appLatest })
   const [editingGoal, setEditingGoal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const goal = me?.kcal_goal ?? 2200
   const qc = useQueryClient()
   const setTheme = useMutation({
@@ -39,6 +42,15 @@ export default function Settings() {
           </div>
           <Button variant="ghost" onClick={() => signOut.mutate()}>Sign out</Button>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-stone-200 pt-4">
+          {/* A plain link: the browser downloads the file, with the session cookie. */}
+          <a href="/api/auth/me/export" download><Button variant="ghost">Download my data</Button></a>
+          {!me?.is_owner && <Button variant="ghost" className="!text-danger" onClick={() => setDeleting(true)}>Delete my account</Button>}
+        </div>
+        <p className="mt-2 text-sm text-stone-500">
+          {me?.is_owner ? 'A JSON file with all your recipes, plans, lists and foods.'
+            : 'A JSON file with all your recipes, plans, lists and foods. Deleting your account removes all of it.'}
+        </p>
       </Card>
 
       <SectionTitle>Appearance</SectionTitle>
@@ -90,6 +102,13 @@ export default function Settings() {
         )}
       </Card>
 
+      <SectionTitle>Feedback</SectionTitle>
+      <Card><FeedbackForm owner={!!me?.is_owner} /></Card>
+      {me?.is_owner && (<>
+        <SectionTitle>Everyone's feedback</SectionTitle>
+        <Card><FeedbackInbox /></Card>
+      </>)}
+
       <SectionTitle>About</SectionTitle>
       <Card>
         <p className="font-semibold">Cauldron</p>
@@ -101,11 +120,47 @@ export default function Settings() {
           <a href={COFFEE_URL} target="_blank" rel="noreferrer"><Button variant="accent">☕ Buy me a coffee</Button></a>
           <a href={SOURCE_URL} target="_blank" rel="noreferrer"><Button variant="ghost">Source code</Button></a>
         </div>
+        <LegalLinks className="mt-4" />
       </Card>
 
       {editingGoal && <GoalDialog goal={goal} onClose={() => setEditingGoal(false)} />}
+      {deleting && <DeleteAccountDialog onClose={() => setDeleting(false)} />}
     </div>
   )
+}
+
+/** Deleting your account: you type DELETE to confirm. */
+function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
+  const [text, setText] = useState('')
+  const del = useDeleteAccount()
+  const ready = text.trim() === 'DELETE'
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div className="rise w-full max-w-sm rounded-3xl bg-cream p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-display text-2xl font-bold">Delete your account?</h3>
+        <p className="mt-2 text-sm text-stone-500">
+          This deletes your recipes and their photos, your plans, meal log, grocery lists, foods and folders, on the
+          website and in the app. It can't be undone. Download your data first if you want a copy.
+        </p>
+        <p className="mt-4 text-sm font-semibold">Type DELETE to confirm</p>
+        <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && ready && del.mutate()}
+          autoCapitalize="characters" autoComplete="off" spellCheck={false}
+          className="mt-2 w-full rounded-2xl bg-paper px-4 py-3 font-semibold outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-danger/50" />
+        {del.isError && <p className="mt-3 text-sm text-danger">{reason(del.error)}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button disabled={!ready || del.isPending} onClick={() => del.mutate()} className="!bg-danger !text-white">
+            {del.isPending ? 'Deleting…' : 'Delete everything'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The server's reason ("An import is still running…"), from the error's JSON body. */
+function reason(e: Error): string {
+  return e.message.match(/"detail":\s*"([^"]*)"/)?.[1] ?? "Couldn't delete your account. Please try again."
 }
 
 /** Release notes as bullets; long ones fold to a few lines with "See more". */

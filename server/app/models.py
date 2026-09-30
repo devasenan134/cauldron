@@ -21,10 +21,12 @@ class User(SQLModel, table=True):
 class RecipeBase(SQLModel):
     title: str
     slug: str = Field(index=True)
-    source: str = "manual"  # manual | cookwell | youtube | instagram
+    source: str = "manual"  # manual | starter | cookwell | youtube | instagram | web | file
     source_url: str | None = None
     video_url: str | None = None
     image_url: str | None = None
+    # Who took the photo, when it isn't yours: {"author", "license", "license_url", "source_url"}.
+    image_credit: dict | None = Field(default=None, sa_type=JSON)
     author: str | None = None
     description: str = ""
     servings: float | None = None  # number used for per-serving maths
@@ -178,4 +180,17 @@ class GroceryTemplate(SQLModel, table=True):
     owner_id: int = Field(foreign_key="user.id", index=True)
     name: str
     items: list[dict] = Field(default_factory=list, sa_type=JSON)  # [{"name", "amount", "aisle"}]
+    created_at: datetime = Field(default_factory=now)
+
+
+class Feedback(SQLModel, table=True):
+    """A bug report or feature request sent from Settings. The owner reads them there too."""
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    type: str = "bug"  # bug | feature
+    title: str
+    body: str = ""
+    # Attached by the website or app: version, platform, and on Android the device and Android version.
+    meta: dict = Field(default_factory=dict, sa_type=JSON)
+    status: str = "open"  # open | done
     created_at: datetime = Field(default_factory=now)

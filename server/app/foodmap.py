@@ -103,6 +103,16 @@ CUSTOM = {
     "Crayfish powder": (330, 60, 8, 3),
     "Beef short ribs": (390, 16, 36, 0),
     "Crystallized ginger": (350, 0.2, 0.2, 87),
+    # for the starter recipes
+    "Curry leaves": (108, 6, 1, 19),
+    "Sambar powder": (330, 14, 10, 48),
+    "Rasam powder": (320, 13, 8, 50),
+    "Chaat masala": (250, 9, 5, 45),
+    "Green curry paste": (150, 3, 8, 16),
+    "Kecap manis": (280, 4, 0, 66),
+    "Shrimp paste": (200, 35, 3, 7),
+    "Poha (flattened rice)": (350, 6.6, 1.2, 77),
+    "Vegetable stock": (8, 0.3, 0.1, 1.5),
 }
 
 FOOD_FOR = {
@@ -404,6 +414,29 @@ FOOD_FOR = {
     "beer": "Alcoholic beverage, beer, regular, all", "light beer": "Alcoholic beverage, beer, light", "lager beer": "Alcoholic beverage, beer, regular, all",
     "belgian ale": "Alcoholic beverage, beer, regular, all", "vodka": "Alcoholic beverage, distilled, vodka, 80 proof",
     "whiskey": "Alcoholic beverage, distilled, whiskey, 86 proof", "brandy": "Alcoholic beverage, distilled, all (gin, rum, vodka, whiskey) 80 proof",
+    # the starter recipes (app/starter/recipes.json)
+    "toor dal": "Pigeon peas (red gram), mature seeds, raw", "moong dal": "Mung beans, mature seeds, raw",
+    "urad dal": "Mungo beans, mature seeds, raw", "chana dal": "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw",
+    "red lentils": "Lentils, pink or red, raw", "dried chickpeas": "Chickpeas (garbanzo beans, bengal gram), mature seeds, raw",
+    "yellow split peas": "Peas, split, mature seeds, raw", "kidney beans": "Beans, kidney, red, mature seeds, canned, drained solids",
+    "cannellini beans": "Beans, white, mature seeds, canned", "refried beans": "Refried beans",
+    "curry leaves": "Curry leaves", "sambar powder": "Sambar powder", "rasam powder": "Rasam powder", "chaat masala": "Chaat masala",
+    "ajwain": "Spices, cumin seed", "ground cumin": "Spices, cumin seed", "ground allspice": "Spices, allspice, ground",
+    "cardamom pods": "Spices, cardamom", "dried red chilies": "Peppers, hot chili, red, raw",
+    "grated coconut": "Nuts, coconut meat, raw", "coconut oil": "Oil, coconut", "jaggery": "Sugars, brown",
+    "semolina": "Semolina, enriched", "rice flour": "Rice flour, white", "chickpea flour": "Chickpea flour (besan)",
+    "poha": "Poha (flattened rice)", "glutinous rice": "Rice, white, glutinous, unenriched, uncooked",
+    "rolled oats": "Cereals, oats, regular and quick, not fortified, dry", "quinoa": "Quinoa, uncooked", "bulgur": "Bulgur, dry",
+    "rice vermicelli": "Rice noodles, dry", "sourdough bread": "Bread, french or vienna (includes sourdough)",
+    "green curry paste": "Green curry paste", "kecap manis": "Kecap manis", "shrimp paste": "Shrimp paste", "tahini": "Tahini",
+    "nori": "Seaweed, laver, raw", "vegetable stock": "Vegetable stock",
+    "lean ground beef": "Beef, ground, 90% lean meat / 10% fat, raw", "ground chicken": "Chicken, ground, raw",
+    "white fish fillets": "Fish, cod, Atlantic, raw",
+    "beetroot": "Beets, raw", "pumpkin": "Pumpkin, raw", "butternut squash": "Squash, winter, butternut, raw",
+    "mango": "Mangos, raw", "blueberries": "Blueberries, raw", "raisins": "Raisins, seedless",
+    "pistachios": "Nuts, pistachio nuts, raw", "chia seeds": "Seeds, chia seeds, dried",
+    "cocoa powder": "Cocoa, dry powder, unsweetened", "dark chocolate": "Chocolate, dark, 60-69% cacao solids",
+    "coffee": "Beverages, coffee, brewed, prepared with tap water", "black tea": "Beverages, tea, black, brewed, prepared with tap water",
     # not food / too vague
     "parchment paper": None, "9x13 baking dish": None, "aromatics": None, "chopped aromatics": None,
 }

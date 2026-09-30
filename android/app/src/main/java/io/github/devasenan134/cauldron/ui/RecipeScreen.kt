@@ -90,6 +90,7 @@ import io.github.devasenan134.cauldron.data.Food
 import io.github.devasenan134.cauldron.data.Ingredient
 import io.github.devasenan134.cauldron.data.MEALS
 import io.github.devasenan134.cauldron.data.MEAL_LABEL
+import io.github.devasenan134.cauldron.data.ImageCredit
 import io.github.devasenan134.cauldron.data.RecipeDetail
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -164,6 +165,7 @@ fun RecipeScreen(id: Int, back: () -> Unit, openPlan: () -> Unit, edit: () -> Un
                     Column(
                         Modifier.offset(y = (-32).dp).clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(C.bg).padding(horizontal = 20.dp, vertical = 24.dp),
                     ) {
+                        if (r.imageUrl != null) r.imageCredit?.let { PhotoCredit(it) }
                         Text(r.title, style = MaterialTheme.typography.headlineMedium)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
                             if (r.isPrep) Pill("🫙 Prepped ingredient", color = C.onGo, background = C.go)
@@ -345,6 +347,16 @@ private fun Meta(icon: androidx.compose.ui.graphics.vector.ImageVector, text: St
         Icon(icon, null, tint = C.goText, modifier = Modifier.size(15.dp))
         Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 5.dp))
     }
+}
+
+/** "Photo: Jane Doe, CC BY-SA 4.0", small under the photo; tapping it opens the photo's page. */
+@Composable
+private fun PhotoCredit(credit: ImageCredit) {
+    val context = LocalContext.current
+    val url = credit.sourceUrl ?: credit.licenseUrl
+    Text("Photo: ${credit.author}, ${credit.license}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(bottom = 10.dp).then(if (url != null) Modifier.clickable { openUrl(context, url) } else Modifier))
 }
 
 @Composable

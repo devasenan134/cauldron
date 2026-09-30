@@ -8,6 +8,12 @@ If you share, host or sell Cauldron or work based on it, keep this notice and cr
 the original project: https://github.com/devasenan134/cauldron
 
 This product includes:
+- The starter recipes (server/app/starter/recipes.json), written for Cauldron by Devasenan
+  Murugan and licensed under the Apache License 2.0 like the code.
+- Photos of the starter recipes from Wikimedia Commons (https://commons.wikimedia.org), each
+  under its own licence (CC0, public domain, CC BY or CC BY-SA). Each photo's author, licence
+  and source page are recorded with its recipe ("image_credit" in recipes.json) and shown under
+  the photo in the app. They are not covered by the Apache License.
 - Nutrition data from USDA FoodData Central (https://fdc.nal.usda.gov), public domain.
 - The fonts Inter and Inter Tight by Rasmus Andersson, under the SIL Open Font License 1.1
   (see licenses/Inter-OFL.txt).

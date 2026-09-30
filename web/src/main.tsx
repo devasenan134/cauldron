@@ -10,6 +10,7 @@ import './index.css'
 import Fridge from './pages/Fridge.tsx'
 import Home from './pages/Home.tsx'
 import Ingredients, { FoodPage } from './pages/Ingredients.tsx'
+import { Privacy, Terms } from './pages/Legal.tsx'
 import Profile, { Folder } from './pages/Profile.tsx'
 import Settings from './pages/Settings.tsx'
 import Grocery from './pages/Grocery.tsx'
@@ -31,8 +32,11 @@ const queryClient: QueryClient = new QueryClient({
 })
 
 // A data router, so a page can ask before you leave it with unsaved changes (the recipe editor).
-const router = createBrowserRouter(createRoutesFromElements(
-  <Route element={<Layout />}>
+// The privacy policy and terms are open to everyone; everything else needs you signed in.
+const router = createBrowserRouter(createRoutesFromElements(<>
+  <Route path="privacy" element={<Privacy />} />
+  <Route path="terms" element={<Terms />} />
+  <Route element={<AuthGate><Layout /></AuthGate>}>
     <Route index element={<Home />} />
     <Route path="recipes" element={<Recipes />} />
     <Route path="recipes/new" element={<RecipeEditor />} />
@@ -48,15 +52,13 @@ const router = createBrowserRouter(createRoutesFromElements(
     <Route path="ingredients" element={<Ingredients />} />
     <Route path="ingredients/:id" element={<FoodPage />} />
     <Route path="*" element={<Navigate to="/" replace />} />
-  </Route>,
-))
+  </Route>
+</>))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        <RouterProvider router={router} />
-      </AuthGate>
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 )

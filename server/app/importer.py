@@ -157,6 +157,8 @@ def run(job_id: int) -> None:
     """Background worker: import one job, recording progress on it as it goes."""
     with _one_at_a_time, Session(engine) as session:
         job = session.get(ImportJob, job_id)
+        if job is None:  # its account was deleted while it waited
+            return
 
         def step(status: str, message: str = "") -> None:
             job.status, job.message = status, message

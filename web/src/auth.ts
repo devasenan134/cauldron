@@ -38,9 +38,18 @@ export function useMe() {
 }
 
 export function useSignOut() {
+  return useSignedOutAfter(api.signOut)
+}
+
+/** Delete your account and everything in it, then sign out. */
+export function useDeleteAccount() {
+  return useSignedOutAfter(api.deleteAccount)
+}
+
+function useSignedOutAfter(mutationFn: () => Promise<unknown>) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: api.signOut,
+    mutationFn,
     onSuccess: () => {
       window.google?.accounts.id.disableAutoSelect()
       qc.setQueryData(ME, null)

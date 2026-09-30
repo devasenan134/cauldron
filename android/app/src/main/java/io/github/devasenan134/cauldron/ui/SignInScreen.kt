@@ -88,7 +88,8 @@ fun SignInScreen() {
                 else Text("Continue with Google", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
             error?.let { Text(it, color = C.danger, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) }
-            Spacer(Modifier.height(24.dp))
+            LegalLinks(Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

@@ -11,8 +11,14 @@ from ..users import sees_library
 
 router = APIRouter()
 
-# Recipes from this source form a library every signed-in user can see.
+# Recipes from this source form a library only the guest list sees (CAULDRON_LIBRARY): it's someone
+# else's work.
 SHARED_SOURCE = "cookwell"
+# The starter recipes (app/starter/recipes.json), written for Cauldron: everyone sees them.
+STARTER_SOURCE = "starter"
+# Library recipes are read-only: nobody rewrites or deletes them in the app (the owner can still fix
+# ingredient weights and foods). They aren't anyone's "mine" either.
+LIBRARY_SOURCES = (SHARED_SOURCE, STARTER_SOURCE)
 
 
 class RecipeSummary(SQLModel):
@@ -82,9 +88,18 @@ class PrepPatch(SQLModel):
     yield_grams: float | None = None
 
 
+def shared_sources(user: User) -> list[str]:
+    """The libraries this user sees: the starter recipes, and Cook Well for the guest list."""
+    return [STARTER_SOURCE, SHARED_SOURCE] if sees_library(user) else [STARTER_SOURCE]
+
+
 def visible(user: User):
-    """Your own recipes plus the shared Cook Well library (for those who may see it)."""
-    return or_(Recipe.owner_id == user.id, Recipe.source == SHARED_SOURCE) if sees_library(user) else Recipe.owner_id == user.id
+    """Your own recipes plus the libraries you may see."""
+    return or_(Recipe.owner_id == user.id, col(Recipe.source).in_(shared_sources(user)))
+
+
+def not_library():
+    return col(Recipe.source).not_in(LIBRARY_SOURCES)
 
 
 def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = False) -> Recipe:
@@ -98,7 +113,7 @@ def owned_recipe(session: Session, recipe_id: int, user: User, edit: bool = Fals
 
 
 def can_see(recipe: Recipe, user: User) -> bool:
-    return recipe.owner_id == user.id or (recipe.source == SHARED_SOURCE and sees_library(user))
+    return recipe.owner_id == user.id or recipe.source in shared_sources(user)
 
 
 def can_edit(recipe: Recipe, user: User) -> bool:
@@ -161,7 +176,7 @@ def list_recipes(
     sort: str = "title",
     session: Session = Depends(get_session), user: User = Depends(current_user),
 ):
-    stmt = select(Recipe).where(Recipe.owner_id == user.id, Recipe.source != SHARED_SOURCE) if mine else select(Recipe).where(visible(user))
+    stmt = select(Recipe).where(Recipe.owner_id == user.id, not_library()) if mine else select(Recipe).where(visible(user))
     if q:
         like = f"%{q}%"
         in_ingredients = select(Ingredient.recipe_id).where(col(Ingredient.name).ilike(like))
@@ -292,7 +307,7 @@ def create_recipe(body: RecipeIn, session: Session = Depends(get_session), user:
 @router.put("/recipes/{recipe_id}", response_model=RecipeDetail)
 def update_recipe(recipe_id: int, body: RecipeIn, session: Session = Depends(get_session), user: User = Depends(current_user)):
     recipe = owned_recipe(session, recipe_id, user, edit=True)
-    if recipe.source == SHARED_SOURCE:
+    if recipe.source in LIBRARY_SOURCES:
         raise HTTPException(403, "library recipes can't be rewritten; fix ingredient weights and foods instead")
     if not body.title.strip():
         raise HTTPException(400, "a recipe needs a title")
@@ -302,7 +317,7 @@ def update_recipe(recipe_id: int, body: RecipeIn, session: Session = Depends(get
 @router.delete("/recipes/{recipe_id}")
 def delete_recipe(recipe_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
     recipe = owned_recipe(session, recipe_id, user, edit=True)
-    if recipe.source == SHARED_SOURCE:
+    if recipe.source in LIBRARY_SOURCES:
         raise HTTPException(403, "library recipes can't be deleted")
     session.delete(recipe)
     session.commit()

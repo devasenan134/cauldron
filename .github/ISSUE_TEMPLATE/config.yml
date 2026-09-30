@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Use Cauldron
+    url: https://cauldron.craftingtable.cc
+    about: The hosted Cauldron. Settings → Feedback there sends a report without a GitHub account.
+  - name: Security problem
+    url: https://github.com/devasenan134/cauldron/blob/main/SECURITY.md
+    about: Please report security problems privately, as described here.

@@ -40,6 +40,10 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun setTheme(theme: String): Me = patch("/auth/me", buildJsonObject { put("theme", theme) })
     suspend fun setCatalogView(view: String): Me = patch("/auth/me", buildJsonObject { put("catalog_view", view) })
     suspend fun signOut() { post<JsonElement>("/auth/logout", JsonObject(emptyMap())) }
+    /** Deletes the account and everything in it. There's no undo. */
+    suspend fun deleteAccount() { delete<JsonElement>("/auth/me") }
+    /** All your data, as the JSON text to save to a file. */
+    suspend fun exportData(): String = call("GET", "/auth/me/export", null, emptyArray())
 
     // --- recipes
     suspend fun recipes(q: String = ""): List<RecipeSummary> = get("/recipes", "q" to q)
@@ -103,6 +107,15 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     /** Copies the recipe as your own; returns the copy's id. */
     suspend fun makeVariation(recipeId: Int, body: RecipeIn): Int =
         (post<JsonObject>("/recipes/$recipeId/variation", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)["id"].toString()).toInt()
+
+    // --- feedback
+    /** Yours; for the owner, everyone's. */
+    suspend fun feedback(): List<Feedback> = get("/feedback")
+    suspend fun sendFeedback(type: String, title: String, body: String, meta: Map<String, String>): Feedback = post("/feedback", buildJsonObject {
+        put("type", type); put("title", title); put("body", body)
+        put("meta", buildJsonObject { meta.forEach { (k, v) -> put(k, v) } })
+    })
+    suspend fun setFeedbackStatus(id: Int, status: String): Feedback = patch("/feedback/$id", buildJsonObject { put("status", status) })
 
     // --- importing from videos, recipe pages and files
     suspend fun importStatus(): ImportStatus = get("/import/status")
