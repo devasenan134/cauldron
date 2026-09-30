@@ -1,4 +1,5 @@
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from sqlmodel import Session
 
+from . import starter
 from .db import engine, init_db
 from .deps import current_user
 from .routes import app_updates, auth, catalog, foods, grocery, images, imports, planner, recipes
@@ -22,7 +24,15 @@ async def lifespan(_: FastAPI):
     init_db()
     with Session(engine) as session:
         claim_placeholder(session)
+        starter.seed(session)  # adds the starter recipes that are missing
+    threading.Thread(target=_starter_photos, daemon=True).start()
     yield
+
+
+def _starter_photos() -> None:
+    """Download the starter recipes' photos in the background (they're linked from Wikimedia until then)."""
+    with Session(engine) as session:
+        starter.fetch_photos(session)
 
 
 app = FastAPI(title="Cauldron", lifespan=lifespan)

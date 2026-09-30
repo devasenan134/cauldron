@@ -40,6 +40,10 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
     suspend fun setTheme(theme: String): Me = patch("/auth/me", buildJsonObject { put("theme", theme) })
     suspend fun setCatalogView(view: String): Me = patch("/auth/me", buildJsonObject { put("catalog_view", view) })
     suspend fun signOut() { post<JsonElement>("/auth/logout", JsonObject(emptyMap())) }
+    /** Deletes the account and everything in it. There's no undo. */
+    suspend fun deleteAccount() { delete<JsonElement>("/auth/me") }
+    /** All your data, as the JSON text to save to a file. */
+    suspend fun exportData(): String = call("GET", "/auth/me/export", null, emptyArray())
 
     // --- recipes
     suspend fun recipes(q: String = ""): List<RecipeSummary> = get("/recipes", "q" to q)

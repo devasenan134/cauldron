@@ -20,6 +20,11 @@ your own.
 - **Batch cooking and prep**: cook once, eat for days. Leftovers go to the fridge and
   count down as you eat them; prepped ingredients (rice, sauces) are tracked by weight.
 - **Meal log**: mark meals eaten or eaten out, and see calories against your daily goal.
+- **Starter recipes**: about 130 home recipes to begin with, written for Cauldron: South and
+  North Indian, East and Southeast Asian, Italian, Mexican, North American, Middle Eastern and
+  Mediterranean, plus breakfasts, snacks, desserts, drinks and prepped basics (cooked rice,
+  ginger-garlic paste, pickled onions). Many are batch-cook friendly and high in protein. Everyone
+  sees them; "Make my version" gives you your own copy to change.
 
 ## Use it
 
@@ -27,6 +32,10 @@ your own.
 - **Android**: download the APK from the website's Settings page or from
   [Releases](https://github.com/devasenan134/cauldron/releases). The app keeps itself up
   to date.
+
+See the [privacy policy](https://cauldron.craftingtable.cc/privacy) and
+[terms of service](https://cauldron.craftingtable.cc/terms). You can download all your data, or
+delete your account, from Settings.
 
 The hosted service runs on my own hardware at home, for free. If you find it useful, you
 can [buy me a coffee](https://buymeacoffee.com/devaa). ☕
@@ -70,6 +79,22 @@ emulator; `10.0.2.2` is your computer as seen from the emulator). The app sends 
 session as `Authorization: Bearer`; the website uses a cookie. For builds that sign in
 with Google, see [SELF_HOSTING.md](SELF_HOSTING.md#5-the-android-app-optional).
 
+### Starter recipes
+
+They're in [`server/app/starter/recipes.json`](server/app/starter/recipes.json). The server adds
+any that are missing when it starts (owned by the owner, with source `starter`). After editing the
+file or the food mapping (`server/app/foodmap.py`), write them all again:
+
+```sh
+cd server
+uv run python scripts/seed_starter.py --refresh
+```
+
+Photos come from Wikimedia Commons, under licences that allow reuse (CC0, public domain, CC BY,
+CC BY-SA). `scripts/find_starter_photos.py` finds them and records each photo's author and
+licence, which the recipe page shows under the photo; check its contact sheet before keeping the
+picks. The server downloads each photo once and serves its own copy.
+
 ### Nutrition
 
 Each ingredient links to a food and gets a weight in grams. The weight comes from the
@@ -87,4 +112,5 @@ Issues and pull requests are welcome. Contributions are accepted under the same 
 
 Copyright 2026 Devasenan Murugan. Licensed under the [Apache License 2.0](LICENSE): you can
 use, change, host and sell it, as long as you keep the copyright and [NOTICE](NOTICE) and
-say what you changed.
+say what you changed. The starter recipes' text is under the same licence; their photos belong to
+their photographers, under the licence credited with each one.

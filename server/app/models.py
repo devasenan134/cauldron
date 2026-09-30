@@ -21,10 +21,12 @@ class User(SQLModel, table=True):
 class RecipeBase(SQLModel):
     title: str
     slug: str = Field(index=True)
-    source: str = "manual"  # manual | cookwell | youtube | instagram
+    source: str = "manual"  # manual | starter | cookwell | youtube | instagram | web | file
     source_url: str | None = None
     video_url: str | None = None
     image_url: str | None = None
+    # Who took the photo, when it isn't yours: {"author", "license", "license_url", "source_url"}.
+    image_credit: dict | None = Field(default=None, sa_type=JSON)
     author: str | None = None
     description: str = ""
     servings: float | None = None  # number used for per-serving maths

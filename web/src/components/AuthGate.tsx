@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { api, type Me } from '../api'
 import { loadGoogle, ME, useMe } from '../auth'
+import { LegalLinks } from '../pages/Legal'
 import { applyTheme, isDark } from '../theme'
 
 export default function AuthGate({ children }: { children: ReactNode }) {
@@ -53,6 +54,7 @@ function SignIn() {
           )}
         </div>
         {signIn.isError && <p className="mt-4 text-sm text-danger">{friendly(signIn.error)}</p>}
+        <LegalLinks className="mt-8" />
       </div>
     </div>
   )

@@ -9,7 +9,7 @@ from ..db import get_session
 from ..deps import current_user
 from ..models import Favorite, Folder, FolderRecipe, Ingredient, PlanEntry, Recipe, Step, User
 from ..recipe_edit import RecipeIn, save_recipe
-from .recipes import SHARED_SOURCE, RecipeSummary, nutrition_for, owned_recipe
+from .recipes import RecipeSummary, not_library, nutrition_for, owned_recipe
 
 router = APIRouter()
 
@@ -57,7 +57,7 @@ def profile(session: Session = Depends(get_session), user: User = Depends(curren
     recipes = {r.id: r for r in session.exec(select(Recipe).where(col(Recipe.id).in_(set(recent_ids))))}
     cuisines = Counter(recipes[i].cuisine for i in recent_ids if i in recipes and recipes[i].cuisine)
     categories = Counter(recipes[i].category for i in recent_ids if i in recipes and recipes[i].category)
-    mine = len(session.exec(select(Recipe.id).where(Recipe.owner_id == user.id, Recipe.source != SHARED_SOURCE)).all())
+    mine = len(session.exec(select(Recipe.id).where(Recipe.owner_id == user.id, not_library())).all())
     favorites = len(session.exec(select(Favorite.id).where(Favorite.owner_id == user.id)).all())
     out_days = sorted(set(session.exec(select(PlanEntry.day).where(
         PlanEntry.owner_id == user.id, PlanEntry.status == "out", PlanEntry.day >= since))))
@@ -105,7 +105,7 @@ def folder_out(session: Session, folder: Folder) -> FolderOut:
 
 @router.get("/catalog", response_model=CatalogOut)
 def catalog(session: Session = Depends(get_session), user: User = Depends(current_user)):
-    mine = list(session.exec(select(Recipe).where(Recipe.owner_id == user.id, Recipe.source != SHARED_SOURCE)
+    mine = list(session.exec(select(Recipe).where(Recipe.owner_id == user.id, not_library())
                              .order_by(col(Recipe.updated_at).desc())))
     favs = list(session.exec(select(Recipe).join(Favorite, Favorite.recipe_id == Recipe.id)
                              .where(Favorite.owner_id == user.id).order_by(col(Favorite.created_at).desc())))

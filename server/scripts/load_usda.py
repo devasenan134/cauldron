@@ -2,7 +2,7 @@
 
 The two JSON zips from https://fdc.nal.usda.gov/download-datasets go in data/usda/ (next to the
 database); if they aren't there, they're downloaded and unzipped. Re-running updates foods in place.
-USDA data is public domain.
+USDA data is public domain. Afterwards the starter recipes are linked to the foods again.
 """
 import json
 import sys
@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlmodel import Session, select  # noqa: E402
 
+from app import starter  # noqa: E402
 from app.db import DB_PATH, engine, init_db  # noqa: E402
 from app.models import Food  # noqa: E402
 
@@ -82,7 +83,9 @@ def main() -> None:
                 session.add(food)
                 n += 1
         session.commit()
-    print(f"loaded {n} USDA foods")
+        print(f"loaded {n} USDA foods")
+        # The starter recipes may have been added before there were foods to link them to.
+        print(f"relinked {starter.seed(session, refresh=True)} starter recipes")
 
 
 if __name__ == "__main__":

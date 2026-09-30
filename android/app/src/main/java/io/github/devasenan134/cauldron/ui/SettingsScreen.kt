@@ -1,7 +1,10 @@
 package io.github.devasenan134.cauldron.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,8 +33,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,13 +54,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import io.github.devasenan134.cauldron.BuildConfig
 import io.github.devasenan134.cauldron.data.AppRelease
 import io.github.devasenan134.cauldron.data.Session
 import io.github.devasenan134.cauldron.data.clearGoogleState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
 
 @Composable
 fun SettingsScreen(back: () -> Unit) {
@@ -64,6 +75,21 @@ fun SettingsScreen(back: () -> Unit) {
 
     val goal = (app.session.state.collectAsState().value as? Session.State.SignedIn)?.me?.kcalGoal ?: 2200
     var editingGoal by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+    // Download my data: Android asks where to save the file, then the export is written there.
+    val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) app.scope.launch {
+            exportMessage = "Downloading…"
+            exportMessage = try {
+                val data = app.api.exportData()
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray()) } ?: error("couldn't write the file")
+                }
+                "Saved. It has all your recipes, plans, lists and foods."
+            } catch (e: Exception) { e.friendly() }
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Settings", back = back)
         Column(Modifier.verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp)) {
@@ -90,6 +116,12 @@ fun SettingsScreen(back: () -> Unit) {
                     Icon(Icons.AutoMirrored.Filled.Logout, null, tint = C.ink, modifier = Modifier.size(18.dp))
                     Text("  Sign out", color = C.ink)
                 }
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { saveExport.launch("cauldron-${LocalDate.now()}.json") }) { Text("Download my data", color = C.ink) }
+                    if (me?.isOwner != true) TextButton(onClick = { deleting = true }) { Text("Delete my account", color = C.danger) }
+                }
+                Text(exportMessage ?: "A JSON file with all your recipes, plans, lists and foods.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
 
             SectionLabel("Appearance")
@@ -135,11 +167,65 @@ fun SettingsScreen(back: () -> Unit) {
                     }
                     OutlinedButton(onClick = { openUrl(context, SOURCE_URL) }) { Text("Source code", fontWeight = FontWeight.Bold, color = C.ink) }
                 }
+                LegalLinks(Modifier.padding(top = 8.dp))
             }
             Spacer(Modifier.height(32.dp))
         }
     }
     if (editingGoal) GoalDialog(goal, onDismiss = { editingGoal = false }) { kcal -> editingGoal = false; app.scope.launch { runCatching { app.setKcalGoal(kcal) } } }
+    if (deleting) DeleteAccountDialog(onDismiss = { deleting = false })
+}
+
+/** Deleting your account: you type DELETE to confirm, then you're signed out. */
+@Composable
+private fun DeleteAccountDialog(onDismiss: () -> Unit) {
+    val app = app()
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Delete your account?") },
+        text = {
+            Column {
+                Text("This deletes your recipes and their photos, your plans, meal log, grocery lists, foods and folders, in the app and on the website. It can't be undone. Download your data first if you want a copy.",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Type DELETE to confirm", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+                OutlinedTextField(text, { text = it }, singleLine = true, enabled = !busy, modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
+                error?.let { Text(it, color = C.danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+            }
+        },
+        confirmButton = {
+            val ready = text.trim() == "DELETE" && !busy
+            TextButton(enabled = ready, onClick = {
+                busy = true; error = null
+                app.scope.launch {
+                    try {
+                        app.api.deleteAccount()
+                        clearGoogleState(context)
+                        app.signOutLocally()
+                    } catch (e: Exception) {
+                        error = e.friendly(); busy = false
+                    }
+                }
+            }) { Text(if (busy) "Deleting…" else "Delete everything", color = if (ready) C.danger else C.faint, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
+}
+
+/** "Privacy policy · Terms of service", opened in a Custom Tab (the website's pages). */
+@Composable
+fun LegalLinks(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val site = BuildConfig.API_URL.trimEnd('/')
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { openUrl(context, "$site/privacy") }) { Text("Privacy policy", color = C.muted, style = MaterialTheme.typography.bodySmall) }
+        Text("·", color = C.muted, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { openUrl(context, "$site/terms") }) { Text("Terms of service", color = C.muted, style = MaterialTheme.typography.bodySmall) }
+    }
 }
 
 private const val COFFEE_URL = "https://buymeacoffee.com/devaa"

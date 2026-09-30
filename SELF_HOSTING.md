@@ -69,10 +69,21 @@ Then load the nutrition data (USDA FoodData Central, about 8,000 foods; it downl
 docker compose exec cauldron uv run --no-sync python scripts/load_usda.py
 ```
 
-Without it everything works, but recipes have no calories.
+Without it everything works, but recipes have no calories. Loading it also links the starter
+recipes to their foods.
 
-Sign in with the owner account. Your recipe book starts empty: write recipes, or import
-them (next step).
+Sign in with the owner account. You'll find about 130 starter recipes already there, owned by
+you and seen by everyone who signs in (they're read-only in the app; "Make my version" copies
+one). Add your own, or import them (next step). Their photos are downloaded from Wikimedia
+Commons the first time the server starts with internet access; each one's credit shows under it.
+
+### Privacy policy and terms
+
+The website has a privacy policy at `/privacy` and terms at `/terms`, linked from the sign-in
+page and Settings. They're written for the hosted Cauldron (who runs it, where it's hosted, who to
+contact). If other people use your server, change them to describe yours: they're in
+`web/src/pages/Legal.tsx`. Google's OAuth consent screen asks for both addresses when you publish
+the app.
 
 ### Who can sign in
 
@@ -193,7 +204,14 @@ git pull
 docker compose up -d --build
 ```
 
-The database updates itself when the server starts. Back up first anyway.
+The database updates itself when the server starts, and new starter recipes are added. To
+rewrite the starter recipes from the file (after an update that changed them):
+
+```sh
+docker compose exec cauldron uv run --no-sync python scripts/seed_starter.py --refresh
+```
+
+Back up first anyway.
 
 ## Settings reference
 

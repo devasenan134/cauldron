@@ -51,6 +51,8 @@ export type RecipeDetail = Omit<RecipeSummary, 'kcal_per_serving'> & {
   source_url: string | null
   video_url: string | null
   author: string | null
+  /** Who took the photo, when it isn't yours (the starter recipes' photos). */
+  image_credit: { author: string; license: string; license_url: string | null; source_url: string | null } | null
   description: string
   yield_text: string | null
   notes: string
@@ -192,6 +194,9 @@ export type RecipeIn = {
   steps: { title: string; text: string }[]
 }
 
+/** The shared libraries: read-only, and not anyone's own recipes. */
+export const LIBRARY_SOURCES = ['cookwell', 'starter']
+
 /** The session is missing or expired; the app shows the sign-in page. */
 export class SignedOut extends Error {}
 
@@ -218,6 +223,8 @@ export const api = {
   me: () => request<Me>('GET', '/auth/me'),
   signIn: (credential: string) => request<Me>('POST', '/auth/google', { credential }),
   signOut: () => request<{ ok: boolean }>('POST', '/auth/logout'),
+  /** Deletes the account and everything in it (not the owner's). */
+  deleteAccount: () => request<{ ok: boolean }>('DELETE', '/auth/me'),
   setKcalGoal: (kcal_goal: number) => request<Me>('PATCH', '/auth/me', { kcal_goal }),
   setTheme: (theme: Me['theme']) => request<Me>('PATCH', '/auth/me', { theme }),
   setCatalogView: (catalog_view: Me['catalog_view']) => request<Me>('PATCH', '/auth/me', { catalog_view }),
