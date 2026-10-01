@@ -41,10 +41,10 @@ export function Button({
   )
 }
 
-export function Chip({ children, selected, onClick }: { children: ReactNode; selected: boolean; onClick: () => void }) {
+export function Chip({ children, selected, onClick, disabled }: { children: ReactNode; selected: boolean; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick}
-      className={`press shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${selected ? 'bg-ink text-cream' : 'bg-paper text-ink ring-1 ring-stone-200 hover:bg-sand'}`}>
+    <button onClick={onClick} disabled={disabled} aria-pressed={selected}
+      className={`press shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-35 ${selected ? 'bg-ink text-cream' : 'bg-paper text-ink ring-1 ring-stone-200 hover:bg-sand'}`}>
       {children}
     </button>
   )
@@ -66,8 +66,9 @@ export function Avatar({ size = 40 }: { size?: number }) {
 /** The big page title, like the app's screen headers. */
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex items-end gap-3">
-      <div className="min-w-0 flex-1">
+    <div className="mb-6 flex flex-wrap items-end gap-3">
+      {/* On a phone the actions drop below the title rather than squeeze over it. */}
+      <div className="min-w-0 flex-1 basis-48">
         {subtitle && <p className="text-sm text-stone-500">{subtitle}</p>}
         <h1 className="font-display text-4xl font-extrabold sm:text-5xl">{title}</h1>
       </div>

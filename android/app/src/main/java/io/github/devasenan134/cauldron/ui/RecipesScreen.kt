@@ -21,8 +21,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import io.github.devasenan134.cauldron.data.Facets
+import androidx.compose.runtime.saveable.Saver
 import io.github.devasenan134.cauldron.data.KcalRange
 import io.github.devasenan134.cauldron.data.RecipeFilter
+import io.github.devasenan134.cauldron.data.TimeRange
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +66,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -83,13 +86,20 @@ import kotlin.math.roundToInt
 fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe: () -> Unit) {
     val store = app().store
     var q by rememberSaveable { mutableStateOf("") }
-    var filter by remember { mutableStateOf(RecipeFilter()) }
+    // Saved like the search box, so the list comes back as it was (rotation, the app being reclaimed).
+    var filter by rememberSaveable(stateSaver = FilterSaver) { mutableStateOf(RecipeFilter()) }
     var filtering by remember { mutableStateOf(false) }
-    val facets by store.facets.collectAsState()
+    val baseFacets by store.facets.collectAsState()
+    val filterFacets = store.filterFacets.collectAsState().value
+    // The options with counts for this filter; the plain ones until those arrive.
+    var lastFacets by remember { mutableStateOf<Facets?>(null) }
+    val facets = filterFacets[store.recipesKey(filter)]?.also { lastFacets = it } ?: lastFacets ?: baseFacets
     val list = store.recipes.collectAsState().value[store.recipesKey(filter)]
 
     LaunchedEffect(q) { delay(300); filter = filter.copy(q = q.trim()) }
     LaunchedEffect(Unit) { runCatching { store.loadFacets() } }
+    LaunchedEffect(filter, filterFacets.isEmpty()) { runCatching { store.loadFacets(filter) } }
+    val clearFilters = { filter = RecipeFilter(q = filter.q, sort = filter.sort) }
     val (load, retry) = cached(list, filter) { store.loadRecipes(filter) }
 
     Box(Modifier.fillMaxSize()) {
@@ -110,7 +120,7 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe
                             FloatingCircle({ filtering = true }, 54.dp) { Icon(Icons.Default.Tune, "Filters", tint = C.ink) }
                         }
                     }
-                    QuickRow(filter, facets?.categories.orEmpty()) { filter = it }
+                    QuickRow(filter, facets) { filter = it }
                 }
             }
             when (load) {
@@ -124,7 +134,16 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe
                             Empty("🧑‍🍳", "No recipes of your own yet", "Tap + to write one: ingredients, steps and a photo, like the rest of the library.")
                         else if (filter.count == 0 && filter.q.isEmpty())
                             Empty("🍲", "Your recipe book is empty", "Tap 🔗 to import a recipe from a YouTube video, an Instagram Reel, a web page or a PDF, or + to write your own.")
-                        else Empty("🔍", "No recipes found", "Try another word, or fewer filters.")
+                        else Empty("🔍", "No recipes found", when {
+                            filter.q.isNotEmpty() && filter.count > 0 -> "Nothing matches “${filter.q}” with these filters."
+                            filter.q.isNotEmpty() -> "Nothing matches “${filter.q}”."
+                            else -> "Nothing matches all of these filters."
+                        }) {
+                            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (filter.count > 0) Chip("Clear filters", selected = true, onClick = clearFilters)
+                                if (filter.q.isNotEmpty()) Chip("Clear search", selected = false) { q = ""; filter = filter.copy(q = "") }
+                            }
+                        }
                     }
                     items(load.value, key = { it.id }) { RecipeCard(it, Modifier.animateItem()) { openRecipe(it.id) } }
                 }
@@ -144,18 +163,35 @@ fun RecipesScreen(openRecipe: (Int) -> Unit, newRecipe: () -> Unit, importRecipe
         ) { Icon(Icons.Default.Add, "New recipe", tint = C.bg, modifier = Modifier.size(28.dp)) }
     }
 
-    if (filtering) FilterSheet(filter, facets, onDismiss = { filtering = false }) { filter = it.copy(q = filter.q) }
+    if (filtering) FilterSheet(filter, onDismiss = { filtering = false }) { filter = it.copy(q = filter.q) }
 }
 
-/** Under the search: My recipes, then the meals as quick chips. */
+private val FilterSaver = Saver<RecipeFilter, List<Any?>>(
+    save = { f -> listOf(f.q, ArrayList(f.cuisines), ArrayList(f.categories), ArrayList(f.tags), f.time?.name, f.kcal?.name, f.mine, f.prep, f.sort) },
+    restore = { l ->
+        @Suppress("UNCHECKED_CAST")
+        RecipeFilter(
+            q = l[0] as String, cuisines = (l[1] as List<String>).toSet(), categories = (l[2] as List<String>).toSet(), tags = (l[3] as List<String>).toSet(),
+            time = (l[4] as String?)?.let { n -> TimeRange.entries.firstOrNull { it.name == n } },
+            kcal = (l[5] as String?)?.let { n -> KcalRange.entries.firstOrNull { it.name == n } },
+            mine = l[6] as Boolean, prep = l[7] as Boolean, sort = l[8] as String,
+        )
+    },
+)
+
+/** Under the search: My recipes, then the meals as quick chips (greyed out when they'd show nothing). */
 @Composable
-private fun QuickRow(filter: RecipeFilter, categories: List<String>, onChange: (RecipeFilter) -> Unit) {
+private fun QuickRow(filter: RecipeFilter, facets: Facets?, onChange: (RecipeFilter) -> Unit) {
+    val categories = facets?.categories.orEmpty()
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 14.dp)) {
         item { Chip("All", selected = filter.count == 0) { onChange(RecipeFilter(q = filter.q, sort = filter.sort)) } }
         item { Chip("My recipes", selected = filter.mine) { onChange(filter.copy(mine = !filter.mine)) } }
         item { Chip("🫙 Prepped", selected = filter.prep) { onChange(filter.copy(prep = !filter.prep)) } }
         items(categories) { c ->
-            Chip(c, selected = c in filter.categories) { onChange(filter.copy(categories = filter.categories.toggle(c))) }
+            val selected = c in filter.categories
+            Chip(c, selected = selected, enabled = selected || facets?.counts?.category?.get(c) != 0) {
+                onChange(filter.copy(categories = filter.categories.toggle(c)))
+            }
         }
     }
 }
@@ -164,12 +200,26 @@ fun <T> Set<T>.toggle(x: T) = if (x in this) this - x else this + x
 
 private val SORTS = listOf("title" to "A–Z", "quickest" to "Quickest", "lowest_kcal" to "Fewest calories",
     "highest_protein" to "Most protein", "newest" to "Newest")
-private val TIMES = listOf(15, 30, 45, 60)
+private val MODE_HINT = mapOf("one" to "pick one", "any" to "any of these", "all" to "all you pick")
 
+/** The filters, with how many recipes each option would show given the rest: options that would show
+ *  none are greyed out, so a combination that can't match anything can't be picked. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun FilterSheet(initial: RecipeFilter, facets: Facets?, onDismiss: () -> Unit, onApply: (RecipeFilter) -> Unit) {
+private fun FilterSheet(initial: RecipeFilter, onDismiss: () -> Unit, onApply: (RecipeFilter) -> Unit) {
+    val store = app().store
     var f by remember { mutableStateOf(initial) }
+    val all = store.filterFacets.collectAsState().value
+    var last by remember { mutableStateOf(all[store.recipesKey(initial)] ?: store.facets.value) }
+    val facets = all[store.recipesKey(f)]?.also { last = it } ?: last
+    val counts = facets?.counts
+    LaunchedEffect(f) { runCatching { store.loadFacets(f) } }
+
+    /** One chip: its count (if known), greyed out when picking it would show nothing. */
+    @Composable
+    fun Option(label: String, selected: Boolean, n: Int?, onClick: () -> Unit) =
+        Chip(label, selected, count = n, enabled = selected || n != 0, onClick = onClick)
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Filters", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
@@ -180,35 +230,54 @@ private fun FilterSheet(initial: RecipeFilter, facets: Facets?, onDismiss: () ->
                 SORTS.forEach { (value, label) -> Chip(label, f.sort == value) { f = f.copy(sort = value) } }
             }
             facets?.categories?.takeIf { it.isNotEmpty() }?.let { cats ->
-                FilterGroup("Meal") { cats.forEach { c -> Chip(c, c in f.categories) { f = f.copy(categories = f.categories.toggle(c)) } } }
+                FilterGroup("Meal", MODE_HINT["any"]) {
+                    cats.forEach { c -> Option(c, c in f.categories, counts?.category?.get(c) ?: counts?.let { 0 }) { f = f.copy(categories = f.categories.toggle(c)) } }
+                }
             }
-            FilterGroup("Ready in") {
-                TIMES.forEach { m -> Chip("≤ $m min", f.maxMinutes == m) { f = f.copy(maxMinutes = if (f.maxMinutes == m) null else m) } }
+            FilterGroup("Ready in", MODE_HINT["one"]) {
+                TimeRange.entries.forEach { t -> Option(t.label, f.time == t, counts?.time?.get(t.key)) { f = f.copy(time = if (f.time == t) null else t) } }
             }
-            FilterGroup("Calories per serving") {
-                KcalRange.entries.forEach { r -> Chip(r.label, f.kcal == r) { f = f.copy(kcal = if (f.kcal == r) null else r) } }
+            FilterGroup("Calories per serving", MODE_HINT["one"]) {
+                KcalRange.entries.forEach { r -> Option(r.label, f.kcal == r, counts?.kcal?.get(r.key)) { f = f.copy(kcal = if (f.kcal == r) null else r) } }
             }
             facets?.tagGroups?.forEach { g ->
-                FilterGroup(g.name) { g.tags.forEach { t -> Chip(t, t in f.tags) { f = f.copy(tags = f.tags.toggle(t)) } } }
+                FilterGroup(g.name, MODE_HINT[g.mode]) {
+                    g.tags.forEach { t -> Option(t, t in f.tags, counts?.tag?.get(t) ?: counts?.let { 0 }) { f = f.toggleTag(g, t) } }
+                }
             }
             facets?.cuisines?.takeIf { it.isNotEmpty() }?.let { cs ->
-                FilterGroup("Cuisine") { cs.forEach { c -> Chip(c, c in f.cuisines) { f = f.copy(cuisines = f.cuisines.toggle(c)) } } }
+                FilterGroup("Cuisine", MODE_HINT["any"]) {
+                    cs.forEach { c -> Option(c, c in f.cuisines, counts?.cuisine?.get(c) ?: counts?.let { 0 }) { f = f.copy(cuisines = f.cuisines.toggle(c)) } }
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
+        val total = all[store.recipesKey(f)]?.total
         Button(
             onClick = { onApply(f); onDismiss() },
             colors = ButtonDefaults.buttonColors(containerColor = C.ink, contentColor = C.bg),
             modifier = Modifier.fillMaxWidth().padding(20.dp).height(54.dp),
-        ) { Text(if (f.count == 0) "Show all recipes" else "Show recipes · ${f.count} filter${if (f.count == 1) "" else "s"}", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        ) {
+            Text(
+                when {
+                    total == null -> if (f.count == 0) "Show all recipes" else "Show recipes · ${f.count} filter${if (f.count == 1) "" else "s"}"
+                    total == 0 -> "No recipes match"
+                    else -> "Show $total recipe${if (total == 1) "" else "s"}"
+                },
+                fontWeight = FontWeight.Bold, fontSize = 16.sp,
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterGroup(title: String, content: @Composable () -> Unit) {
+private fun FilterGroup(title: String, hint: String? = null, content: @Composable () -> Unit) {
     Column(Modifier.padding(top = 18.dp)) {
-        Text(title.uppercase(), color = C.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.8.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title.uppercase(), color = C.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, letterSpacing = 0.8.sp)
+            if (hint != null) Text(hint, color = C.muted.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) { content() }
     }
 }
@@ -237,15 +306,18 @@ fun SearchPill(value: String, onChange: (String) -> Unit, modifier: Modifier = M
     }
 }
 
+/** A pill to pick. count: shown after the text (how many recipes it would show); enabled = false greys it out. */
 @Composable
-fun Chip(text: String, selected: Boolean, icon: Boolean = false, onClick: () -> Unit) {
+fun Chip(text: String, selected: Boolean, icon: Boolean = false, count: Int? = null, enabled: Boolean = true, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(if (selected) C.ink else C.surface)
-            .border(1.dp, if (selected) C.ink else C.line, RoundedCornerShape(50)).pressable(onClick, 0.93f).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.alpha(if (enabled) 1f else 0.35f).clip(RoundedCornerShape(50)).background(if (selected) C.ink else C.surface)
+            .border(1.dp, if (selected) C.ink else C.line, RoundedCornerShape(50))
+            .then(if (enabled) Modifier.pressable(onClick, 0.93f) else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon) Icon(Icons.Default.Public, null, tint = if (selected) C.bg else C.muted, modifier = Modifier.size(16.dp).padding(end = 0.dp))
         Text(text, color = if (selected) C.bg else C.ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = if (icon) 6.dp else 0.dp))
+        if (count != null) Text("$count", color = if (selected) C.bg.copy(alpha = 0.7f) else C.muted, fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

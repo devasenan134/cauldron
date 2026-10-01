@@ -1,7 +1,7 @@
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   pointerWithin,
   rectIntersection,
@@ -16,7 +16,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, MEALS, type Meal, type Plan, type PlanEntry, type RecipeSummary } from '../api'
 import { LogButtons, loggable, MEAL_EMOJI, MEAL_LABEL } from '../components/MealLog'
@@ -43,6 +43,20 @@ type Drag =
   | { kind: 'batch'; batch: PlanEntry }
   | { kind: 'entry'; entry: PlanEntry }
 
+// Tapping a recipe, a batch or a planned meal opens "put it on a day" (what you'd drag, without dragging:
+// on a phone a drag needs a long press).
+const Place = createContext<(d: Drag) => void>(() => {})
+
+// Controls inside a draggable card: pressing them mustn't start a drag (with the mouse or a finger).
+const stop = {
+  onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+  onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+  onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
+}
+// On a draggable: a long press starts a drag, not text selection or the browser's link/image menu.
+const noCallout = 'select-none [-webkit-touch-callout:none]'
+const phoneWidth = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
+
 
 export default function Planner() {
   const [params, setParams] = useSearchParams()
@@ -54,13 +68,16 @@ export default function Planner() {
   const plan = useQuery({ queryKey: planKey, queryFn: () => api.plan(start) })
   const [dragging, setDragging] = useState<Drag | null>(null)
   const [includeQueue, setIncludeQueue] = useState(false)
-  // Week: all seven days side by side. Day: one day, big (like the app's two views).
-  const [view, setView] = useState<'week' | 'day'>('week')
+  // Week: all seven days side by side. Day: one day, big (like the app's two views). Phones start on Day.
+  const [view, setView] = useState<'week' | 'day'>(() => (phoneWidth() ? 'day' : 'week'))
   const [picked, setPicked] = useState<string | null>(null)
+  const [placing, setPlacing] = useState<Drag | null>(null)
 
+  // Mouse: drag once it moves a few pixels. Touch: press and hold, so a swipe still scrolls the page.
+  // (One PointerSensor for both took touches too, and lost them to the browser's scrolling.)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   )
 
   const refresh = () => refreshPlan(qc)
@@ -100,16 +117,22 @@ export default function Planner() {
     return null
   }
 
-  const onDragStart = (e: DragStartEvent) => setDragging((e.active.data.current as Drag) ?? null)
+  const onDragStart = (e: DragStartEvent) => {
+    setDragging((e.active.data.current as Drag) ?? null)
+    navigator.vibrate?.(10)
+  }
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     setDragging(null)
     const p = plan.data
     if (!over || !p) return
     const target = locate(String(over.id), p)
-    if (!target) return
+    if (target) place(active.data.current as Drag, target, p)
+  }
+
+  /** Put what was dragged (or tapped) at a place in the plan: add a recipe or leftovers, or move a meal. */
+  const place = (drag: Drag, target: { col: string; index: number }, p: Plan) => {
     const { day, meal } = parseSlot(target.col)
-    const drag = active.data.current as Drag
 
     if (drag.kind === 'recipe') {
       add.mutate({ day, meal, recipe_id: drag.recipe.id, servings: 1, position: target.index })
@@ -125,6 +148,7 @@ export default function Planner() {
     const from = entry.day ? slot(entry.day, entry.meal) : QUEUE
     const next: Record<string, PlanEntry[]> = Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, [...v]]))
     if (next[from]) next[from] = next[from].filter((e) => e.id !== entry.id)
+    if (!next[target.col]) return
     next[target.col].splice(target.index, 0, { ...entry, day, meal: meal ?? entry.meal })
     qc.setQueryData<Plan>(planKey, {
       days: Object.fromEntries(Object.keys(p.days).map((d) => [d, MEALS.flatMap((m) => next[slot(d, m)])])),
@@ -137,10 +161,15 @@ export default function Planner() {
   const weekTotal = days.reduce((sum, d) => sum + dayTotal(plan.data!.days[d]), 0)
 
   return (
+    <Place.Provider value={setPlacing}>
     <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd}
-      onDragCancel={() => setDragging(null)}>
+      onDragCancel={() => setDragging(null)} autoScroll={{ threshold: { x: 0.15, y: 0.15 }, acceleration: 12 }}>
       <div className="rise">
         <PageHeader title="Plan" subtitle={`Week of ${dayLabel(start).date} · ${kcal(weekTotal)}`} />
+        <p className="-mt-3 mb-4 text-sm text-stone-500">
+          <span className="pointer-coarse:hidden">Drag a recipe onto a meal, or click it to pick a day.</span>
+          <span className="hidden pointer-coarse:inline">Tap a recipe to add it to a day, or press and hold to drag it.</span>
+        </p>
         <div className="-mt-2 mb-5 flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-full bg-paper p-1">
             <button aria-label="Previous week" className="press rounded-full px-3 py-1.5 font-bold hover:bg-sand" onClick={() => setWeek(addDays(start, -7))}>←</button>
@@ -154,7 +183,7 @@ export default function Planner() {
                 className={`press rounded-full px-4 py-1.5 text-sm capitalize ${view === v ? 'bg-paper font-bold shadow-sm' : 'font-medium text-stone-500'}`}>{v}</button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex w-full items-center justify-between gap-3 sm:ml-auto sm:w-auto">
             <label className="flex items-center gap-2 text-sm text-stone-600">
               <input type="checkbox" className="h-4 w-4 accent-ember-bright" checked={includeQueue} onChange={(e) => setIncludeQueue(e.target.checked)} />
               include queue
@@ -185,7 +214,7 @@ export default function Planner() {
               const { weekday, date } = dayLabel(day)
               return (
                 <div>
-                  <div className="mb-3 grid grid-cols-7 gap-2">
+                  <div className="mb-3 grid grid-cols-7 gap-1 sm:gap-2">
                     {days.map((d) => (
                       <button key={d} onClick={() => setPicked(d)}
                         className={`press rounded-2xl py-2 text-center transition-colors ${d === day ? 'bg-ink text-cream' : 'bg-paper ring-1 ring-stone-200'} ${d === today() && d !== day ? 'ring-2 ring-ember-bright' : ''}`}>
@@ -207,11 +236,66 @@ export default function Planner() {
       <DragOverlay>
         {dragging && (
           <div className="w-56 rotate-2 rounded-2xl bg-paper p-3 text-sm font-semibold shadow-2xl ring-2 ring-ember-bright">
-            {dragging.kind === 'recipe' ? dragging.recipe.title : dragging.kind === 'batch' ? `Leftovers: ${dragging.batch.title}` : dragging.entry.title}
+            {dragTitle(dragging)}
           </div>
         )}
       </DragOverlay>
     </DndContext>
+    {placing && plan.data && (
+      <PlaceDialog drag={placing} days={days} onClose={() => setPlacing(null)}
+        onPick={(col) => {
+          const p = plan.data!
+          place(placing, { col, index: columns(p)[col]?.length ?? 0 }, p)
+          setPlacing(null)
+        }} />
+    )}
+    </Place.Provider>
+  )
+}
+
+const dragTitle = (d: Drag) => d.kind === 'recipe' ? d.recipe.title : d.kind === 'batch' ? `Leftovers: ${d.batch.title}` : d.entry.title
+
+/** Where to put a recipe, leftovers or a planned meal, without dragging: a day (this week) and a meal,
+ *  or the queue. A sheet from the bottom on a phone. */
+function PlaceDialog({ drag, days, onPick, onClose }: { drag: Drag; days: string[]; onPick: (col: string) => void; onClose: () => void }) {
+  const from = drag.kind === 'entry' ? drag.entry.day : null
+  const [day, setDay] = useState(from && days.includes(from) ? from : days.includes(today()) ? today() : days[0])
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [onClose])
+  const moving = drag.kind === 'entry'
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={moving ? 'Move to' : 'Add to'} onClick={(e) => e.stopPropagation()}
+        className="rise w-full max-w-md rounded-t-3xl bg-cream p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-3xl">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">{moving ? 'Move' : 'Add to the plan'}</p>
+            <h2 className="line-clamp-2 font-display text-2xl font-bold leading-tight">{dragTitle(drag)}</h2>
+          </div>
+          <button className="p-1 text-xl text-stone-500 hover:text-ink" aria-label="Close" onClick={onClose}>✕</button>
+        </div>
+        <div className="mt-4 grid grid-cols-7 gap-1">
+          {days.map((d) => (
+            <button key={d} onClick={() => setDay(d)} aria-pressed={d === day}
+              className={`press rounded-2xl py-2 text-center ${d === day ? 'bg-ink text-cream' : 'bg-paper ring-1 ring-stone-200'} ${d === today() && d !== day ? 'ring-2 ring-ember-bright' : ''}`}>
+              <span className="block text-[11px] opacity-70">{dayLabel(d).weekday}</span>
+              <span className="block font-display text-lg font-bold">{d.slice(8).replace(/^0/, '')}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {MEALS.map((m) => (
+            <Button key={m} variant="ghost" className="py-3" onClick={() => onPick(slot(day, m))}>{MEAL_EMOJI[m]} {MEAL_LABEL[m]}</Button>
+          ))}
+        </div>
+        <button className="mt-3 w-full rounded-full px-4 py-2.5 text-sm font-semibold text-stone-500 hover:bg-sand hover:text-ink" onClick={() => onPick(QUEUE)}>
+          No day yet: put it in the queue
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -313,12 +397,21 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
   }
   const out = entry.status === 'out'
   const isBatch = entry.cook_portions != null && !out
+  const pick = useContext(Place)
   const logRow = loggable(entry) && (
-    <div className="mt-2 flex flex-wrap items-center gap-1" {...{ onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }}>
+    <div className="mt-2 flex flex-wrap items-center gap-1" {...stop}>
       <LogButtons entry={entry} />
     </div>
   )
-  const stop = { onPointerDown: (e: React.PointerEvent) => e.stopPropagation() }
+  // ✕ and "move" show on hover with a mouse, always on a touch screen (no hover there).
+  const corner = (
+    <div className="absolute -right-1.5 -top-1.5 hidden gap-1 group-hover:flex pointer-coarse:flex" {...stop}>
+      <button onClick={() => pick({ kind: 'entry', entry })} title="Move to another day or meal" aria-label="Move"
+        className="press grid h-7 w-7 place-items-center rounded-full bg-paper text-xs text-ink shadow ring-1 ring-stone-200">⇄</button>
+      <button onClick={() => remove.mutate()} title={entry.cook_portions != null && entry.status !== 'out' ? 'Remove (and its leftovers)' : 'Remove'} aria-label="Remove"
+        className="press grid h-7 w-7 place-items-center rounded-full bg-ink text-xs text-cream">✕</button>
+    </div>
+  )
   const shortfall = entry.short.length > 0 && (
     <p className="mt-1.5 rounded-xl bg-pink-soft px-2 py-1 text-[11px] font-semibold text-pink-deep" {...stop}
       title="Nothing planned makes enough of it; the grocery list buys its ingredients instead">
@@ -337,9 +430,9 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
     }
     return (
       <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
-        className={`group relative cursor-grab touch-manipulation rounded-2xl bg-ember-soft p-2 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
+        className={`group relative ${noCallout} cursor-grab touch-manipulation rounded-2xl bg-ember-soft p-2 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
         <div className="flex gap-2">
-          {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
+          {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" draggable={false} className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
           <div className="min-w-0 flex-1">
             <div className="text-[10px] font-bold uppercase tracking-wider text-ember">🫙 Prep</div>
             <Link to={`/recipes/${entry.recipe_id}`} className="line-clamp-2 text-sm font-semibold leading-tight hover:text-ember" {...stop}>{entry.title}</Link>
@@ -354,8 +447,7 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
           </span>
         </div>
         {shortfall}
-        <button {...stop} onClick={() => remove.mutate()} title="Remove"
-          className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+        {corner}
       </div>
     )
   }
@@ -365,11 +457,10 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
     if (out) {
       return (
         <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
-          className={`group relative cursor-grab touch-manipulation rounded-2xl bg-danger/10 p-2.5 ring-1 ring-danger/30 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}>
+          className={`group relative ${noCallout} cursor-grab touch-manipulation rounded-2xl bg-danger/10 p-2.5 ring-1 ring-danger/30 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}>
           <div className="text-sm font-semibold text-danger">🍽 {entry.title}</div>
           {logRow}
-          <button {...stop} onClick={() => remove.mutate()} title="Remove"
-            className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+        {corner}
         </div>
       )
     }
@@ -382,21 +473,20 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
     }
     return (
       <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
-        className={`group relative cursor-grab touch-manipulation rounded-2xl bg-yellow-soft p-2.5 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
+        className={`group relative ${noCallout} cursor-grab touch-manipulation rounded-2xl bg-yellow-soft p-2.5 active:cursor-grabbing ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
         <button {...stop} onClick={edit} className="block w-full text-left text-sm text-ink">📝 {entry.title}</button>
         {logRow}
-        <button {...stop} onClick={() => remove.mutate()} title="Remove note"
-          className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+        {corner}
       </div>
     )
   }
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners}
-      className={`group relative cursor-grab touch-manipulation rounded-2xl p-2 active:cursor-grabbing ${
+      className={`group relative ${noCallout} cursor-grab touch-manipulation rounded-2xl p-2 active:cursor-grabbing ${
         out ? 'bg-danger/10 ring-1 ring-danger/30' : entry.leftover_of ? 'bg-sky-soft' : isBatch ? 'bg-amber-soft' : 'bg-cream'} ${isDragging ? 'opacity-40' : ''} ${compact ? 'w-56' : ''}`}>
       <div className="flex gap-2">
-        {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
+        {entry.image_url && <img src={thumb(entry.image_url, 96)} alt="" draggable={false} className="h-11 w-11 shrink-0 rounded-xl object-cover" />}
         <div className="min-w-0 flex-1">
           {out && <div className="text-[10px] font-bold uppercase tracking-wider text-danger">Ate out · in the fridge</div>}
           {entry.leftover_of && !out && <div className="text-[10px] font-bold uppercase tracking-wider text-sky-deep">Leftovers</div>}
@@ -417,20 +507,19 @@ function EntryCard({ entry, compact }: { entry: PlanEntry; compact?: boolean }) 
           <div className="mt-1"><Stepper value={entry.cook_portions!} min={entry.servings} onChange={setCook} label="cook" tone="amber" /></div>
           <div className={`mt-1.5 flex items-center justify-between rounded-xl bg-paper/70 px-2 py-1 text-[11px] font-semibold ${entry.portions_left! < 0 ? 'text-red-700' : 'text-amber-deep'}`}>
             {entry.portions_left! < 0 ? `${num(-entry.portions_left!)} more planned than cooked` : `${plural(entry.portions_left!, 'portion')} for later`}
-            <button className="hidden text-stone-400 hover:text-ink group-hover:inline" title="Not a batch" onClick={() => setCook(null)}>✕</button>
+            <button className="hidden text-stone-400 hover:text-ink group-hover:inline pointer-coarse:inline" title="Not a batch" onClick={() => setCook(null)}>✕</button>
           </div>
           {shortfall}
         </div>
       ) : (
         !out && entry.recipe_id != null && !entry.leftover_of && (
           <button {...stop} onClick={() => setCook(entry.servings + 3)}
-            className="mt-1 hidden text-xs font-semibold text-amber-deep hover:underline group-hover:block">+ batch cook</button>
+            className="mt-1 hidden text-xs font-semibold text-amber-deep hover:underline group-hover:block pointer-coarse:block">+ batch cook</button>
         )
       )}
       {!isBatch && shortfall}
       {logRow}
-      <button {...stop} onClick={() => remove.mutate()} title={isBatch ? 'Remove (and its leftovers)' : 'Remove'}
-        className="press absolute -right-1.5 -top-1.5 hidden h-6 w-6 rounded-full bg-ink text-xs text-cream group-hover:grid group-hover:place-items-center">✕</button>
+        {corner}
     </div>
   )
 }
@@ -454,17 +543,20 @@ function FridgePicker({ batches }: { batches: PlanEntry[] }) {
     <div className="max-h-72 space-y-1 overflow-auto lg:max-h-none lg:flex-1">
       {batches.length === 0 && <p className="p-2 text-sm text-stone-500">No batches with portions left. Use “+ batch cook” on a planned meal.</p>}
       {batches.map((b) => <DraggableBatch key={b.id} batch={b} />)}
-      {batches.length > 0 && <p className="p-2 text-xs text-stone-400">Drag onto a day to plan leftovers.</p>}
+      {batches.length > 0 && <p className="p-2 text-xs text-stone-400">Drag onto a day, or tap, to plan leftovers.</p>}
     </div>
   )
 }
 
 function DraggableBatch({ batch }: { batch: PlanEntry }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `b:${batch.id}`, data: { kind: 'batch', batch } satisfies Drag })
+  const pick = useContext(Place)
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners}
-      className={`flex cursor-grab touch-manipulation items-center gap-2 rounded-2xl p-1.5 hover:bg-sand ${isDragging ? 'opacity-40' : ''}`}>
-      {batch.image_url && <img src={thumb(batch.image_url, 80)} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />}
+    <div ref={setNodeRef} {...attributes} {...listeners} aria-label={`Plan leftovers: ${batch.title}`}
+      onClick={() => pick({ kind: 'batch', batch })} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick({ kind: 'batch', batch }) } }}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`flex ${noCallout} cursor-grab touch-manipulation items-center gap-2 rounded-2xl p-1.5 hover:bg-sand ${isDragging ? 'opacity-40' : ''}`}>
+      {batch.image_url && <img src={thumb(batch.image_url, 80)} alt="" draggable={false} className="h-10 w-10 shrink-0 rounded-xl object-cover" />}
       <div className="min-w-0 flex-1">
         <div className="line-clamp-1 text-sm font-semibold leading-tight">{batch.title}</div>
         <div className="text-xs text-stone-500">{batch.day ? `cooked ${dayLabel(batch.day).date}` : 'not scheduled'}</div>
@@ -481,7 +573,7 @@ function RecipePicker() {
   return (
     <>
       <input className="mb-2 w-full rounded-full bg-cream px-4 py-2.5 text-sm outline-none ring-1 ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-ember-bright/50"
-        placeholder="Find a recipe to drag…" value={q} onChange={(e) => setQ(e.target.value)} />
+        placeholder="Find a recipe…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="max-h-72 space-y-1 overflow-auto lg:max-h-none lg:flex-1">
         {recipes.data?.map((r) => <DraggableRecipe key={r.id} recipe={r} />)}
       </div>
@@ -491,10 +583,13 @@ function RecipePicker() {
 
 function DraggableRecipe({ recipe }: { recipe: RecipeSummary }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `r:${recipe.id}`, data: { kind: 'recipe', recipe } satisfies Drag })
+  const pick = useContext(Place)
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners}
-      className={`flex cursor-grab touch-manipulation items-center gap-2 rounded-2xl p-1.5 hover:bg-sand ${isDragging ? 'opacity-40' : ''}`}>
-      {recipe.image_url && <img src={thumb(recipe.image_url, 80)} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />}
+    <div ref={setNodeRef} {...attributes} {...listeners} aria-label={`Add to the plan: ${recipe.title}`}
+      onClick={() => pick({ kind: 'recipe', recipe })} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick({ kind: 'recipe', recipe }) } }}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`flex ${noCallout} cursor-grab touch-manipulation items-center gap-2 rounded-2xl p-1.5 hover:bg-sand ${isDragging ? 'opacity-40' : ''}`}>
+      {recipe.image_url && <img src={thumb(recipe.image_url, 80)} alt="" draggable={false} className="h-10 w-10 shrink-0 rounded-xl object-cover" />}
       <span className="line-clamp-2 flex-1 text-sm font-semibold leading-tight">{recipe.title}</span>
       {recipe.kcal_per_serving ? <span className="shrink-0 text-xs text-stone-500">{Math.round(recipe.kcal_per_serving)}</span> : null}
     </div>

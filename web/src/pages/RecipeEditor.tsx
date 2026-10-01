@@ -67,7 +67,7 @@ export default function RecipeEditor() {
   const fromId = id == null && from ? Number(from) : null
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const facets = useQuery({ queryKey: ['facets'], queryFn: api.facets })
+  const facets = useQuery({ queryKey: ['recipes', 'facets'], queryFn: () => api.facets() })
   const preps = useQuery({ queryKey: ['preps'], queryFn: api.preps })
   const prepNamed = (name: string) => preps.data?.find((p) => p.id !== id && p.title.trim().toLowerCase().replace(/s$/, '') === name.trim().toLowerCase().replace(/s$/, ''))
   const source = id ?? fromId
@@ -208,9 +208,9 @@ export default function RecipeEditor() {
             const setRow = (patch: Partial<Row>) => setSection(si, { ...s, rows: s.rows.map((x, j) => (j === ri ? { ...x, ...patch } : x)) })
             return (
               <div key={ri} className="mt-2 flex items-start gap-2">
-                <input value={r.label} onChange={(e) => setRow({ label: e.target.value })} placeholder="Amount" className={`${small} w-28`} />
-                <div className="flex flex-1 flex-col gap-1.5 sm:flex-row">
-                  <div className="relative flex flex-1">
+                <input value={r.label} onChange={(e) => setRow({ label: e.target.value })} placeholder="Amount" className={`${small} w-20 sm:w-28`} />
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row">
+                  <div className="relative flex min-w-0 flex-1">
                     <input value={r.name} onChange={(e) => setRow({ name: e.target.value, prep_id: null })} placeholder="Ingredient" list="preps"
                       className={`${small} flex-1 ${r.prep_id || prepNamed(r.name) ? 'pr-16' : ''}`} />
                     {(r.prep_id || prepNamed(r.name)) && (
@@ -234,7 +234,7 @@ export default function RecipeEditor() {
         return (
           <div key={i} className="mb-3 flex gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink font-display font-bold text-cream">{i + 1}</span>
-            <div className="flex flex-1 flex-col gap-2 rounded-3xl bg-paper p-3 ring-1 ring-stone-200">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-paper p-3 ring-1 ring-stone-200">
               <input value={s.title} onChange={(e) => setStep({ title: e.target.value })} placeholder="Step title, e.g. Sear the chicken (optional)" className={`${small} font-semibold`} />
               <textarea value={s.text} onChange={(e) => setStep({ text: e.target.value })} placeholder="What to do" rows={3} className={`${small} resize-y`} />
             </div>
@@ -255,7 +255,7 @@ export default function RecipeEditor() {
   )
 }
 
-const small = 'rounded-xl bg-cream px-3 py-2.5 outline-none ring-1 ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-ember-bright/50'
+const small = 'min-w-0 rounded-xl bg-cream px-3 py-2.5 outline-none ring-1 ring-stone-200 placeholder:text-stone-400 focus:ring-2 focus:ring-ember-bright/50'
 
 function Field({ value, onChange, placeholder, label, big, multiline, list }: {
   value: string; onChange: (v: string) => void; placeholder: string; label?: string; big?: boolean; multiline?: boolean; list?: string

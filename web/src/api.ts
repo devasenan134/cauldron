@@ -175,8 +175,15 @@ export type Feedback = {
 
 export type ImportJob = { id: number; url: string; status: string; message: string; recipe_id: number | null }
 
-export type TagGroup = { name: string; tags: string[] }
-export type Facets = { cuisines: string[]; categories: string[]; tag_groups: TagGroup[] }
+/** How a tag family combines when more than one of its tags is picked: pick one, OR, or AND. */
+export type TagGroup = { name: string; mode: 'one' | 'any' | 'all'; tags: string[] }
+type Counts = Record<string, number>
+/** What the filters offer and, for the filter asked about, how many recipes each option would show. */
+export type Facets = {
+  cuisines: string[]; categories: string[]; tag_groups: TagGroup[]
+  total: number
+  counts: { cuisine: Counts; category: Counts; tag: Counts; time: Counts; kcal: Counts; mine: number; prep: number }
+}
 
 /** What the recipe list is filtered and sorted by (the same options as the app). */
 export type RecipeFilter = {
@@ -184,13 +191,29 @@ export type RecipeFilter = {
   cuisines: string[]
   categories: string[]
   tags: string[]
-  maxMinutes: number | null
-  kcal: 'light' | 'medium' | 'hearty' | null
+  time: keyof typeof TIME_RANGES | null
+  kcal: keyof typeof KCAL_RANGES | null
   mine: boolean
   prep: boolean
   sort: 'title' | 'quickest' | 'lowest_kcal' | 'highest_protein' | 'newest'
 }
-export const KCAL_RANGES = { light: ['Under 400', null, 400], medium: ['400–700', 400, 700], hearty: ['Over 700', 700, null] } as const
+// The presets the server knows by key ("Ready in" is the only time filter: Cook Well's time tags fold into it).
+export const TIME_RANGES = { '15': '≤ 15 min', '30': '≤ 30 min', '45': '≤ 45 min', '60': '≤ 1 hour', long: 'Over 1 hour' } as const
+export const KCAL_RANGES = { light: 'Under 400', medium: '400–700', hearty: 'Over 700' } as const
+
+/** The filter as query parameters, for both the list and its facets. */
+function filterParams(f: RecipeFilter) {
+  const p = new URLSearchParams()
+  if (f.q.trim()) p.set('q', f.q.trim())
+  if (f.mine) p.set('mine', 'true')
+  if (f.prep) p.set('prep', 'true')
+  if (f.time) p.set('time', f.time)
+  if (f.kcal) p.set('kcal', f.kcal)
+  f.cuisines.forEach((c) => p.append('cuisine', c))
+  f.categories.forEach((c) => p.append('category', c))
+  f.tags.forEach((t) => p.append('tag', t))
+  return p
+}
 
 /** A recipe of your own, as sent to the server. */
 export type RecipeIn = {
@@ -249,20 +272,8 @@ export const api = {
   appLatest: () => request<AppRelease | null>('GET', '/app/latest'),
 
   recipesFiltered: (f: RecipeFilter) => {
-    const p = new URLSearchParams()
-    if (f.q.trim()) p.set('q', f.q.trim())
+    const p = filterParams(f)
     p.set('sort', f.sort)
-    if (f.mine) p.set('mine', 'true')
-    if (f.prep) p.set('prep', 'true')
-    if (f.maxMinutes) p.set('max_minutes', String(f.maxMinutes))
-    if (f.kcal) {
-      const [, min, max] = KCAL_RANGES[f.kcal]
-      if (min != null) p.set('min_kcal', String(min))
-      if (max != null) p.set('max_kcal', String(max))
-    }
-    f.cuisines.forEach((c) => p.append('cuisine', c))
-    f.categories.forEach((c) => p.append('category', c))
-    f.tags.forEach((t) => p.append('tag', t))
     return request<RecipeSummary[]>('GET', `/recipes?${p}`)
   },
   createRecipe: (r: RecipeIn) => request<RecipeDetail>('POST', '/recipes', r),
@@ -314,7 +325,7 @@ export const api = {
   appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),
-  facets: () => request<Facets>('GET', '/recipes/facets'),
+  facets: (f?: RecipeFilter) => request<Facets>('GET', `/recipes/facets${f ? `?${filterParams(f)}` : ''}`),
   recipe: (id: number) => request<RecipeDetail>('GET', `/recipes/${id}`),
   patchIngredient: (id: number, patch: { grams?: number | null; food_id?: number | null; prep_id?: number | null }) =>
     request<RecipeDetail>('PATCH', `/ingredients/${id}`, patch),
