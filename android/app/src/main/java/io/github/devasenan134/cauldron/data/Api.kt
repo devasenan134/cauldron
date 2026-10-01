@@ -47,13 +47,11 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
 
     // --- recipes
     suspend fun recipes(q: String = ""): List<RecipeSummary> = get("/recipes", "q" to q)
-    suspend fun recipes(f: RecipeFilter): List<RecipeSummary> = get(
-        "/recipes",
-        *(listOf("q" to f.q.trim(), "sort" to f.sort, "mine" to if (f.mine) "true" else "", "prep" to if (f.prep) "true" else "",
-            "max_minutes" to (f.maxMinutes?.toString() ?: ""),
-            "min_kcal" to (f.kcal?.min?.toString() ?: ""), "max_kcal" to (f.kcal?.max?.toString() ?: "")) +
-            f.cuisines.map { "cuisine" to it } + f.categories.map { "category" to it } + f.tags.map { "tag" to it }).toTypedArray(),
-    )
+    suspend fun recipes(f: RecipeFilter): List<RecipeSummary> = get("/recipes", *(filterQuery(f) + ("sort" to f.sort)).toTypedArray())
+    private fun filterQuery(f: RecipeFilter): List<Pair<String, String>> =
+        listOf("q" to f.q.trim(), "mine" to if (f.mine) "true" else "", "prep" to if (f.prep) "true" else "",
+            "time" to (f.time?.key ?: ""), "kcal" to (f.kcal?.key ?: "")) +
+            f.cuisines.map { "cuisine" to it } + f.categories.map { "category" to it } + f.tags.map { "tag" to it }
     suspend fun createRecipe(body: RecipeIn): RecipeDetail = post("/recipes", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)
     suspend fun updateRecipe(id: Int, body: RecipeIn): RecipeDetail = put("/recipes/$id", json.encodeToJsonElement(RecipeIn.serializer(), body) as JsonObject)
     suspend fun deleteRecipe(id: Int) { delete<JsonElement>("/recipes/$id") }
@@ -72,6 +70,8 @@ class Api(baseUrl: String, private val token: () -> String?, private val onSigne
         }
     }
     suspend fun facets(): Facets = get("/recipes/facets")
+    /** The options, and how many recipes each would show with this filter. */
+    suspend fun facets(f: RecipeFilter): Facets = get("/recipes/facets", *filterQuery(f).toTypedArray())
     suspend fun recipe(id: Int): RecipeDetail = get("/recipes/$id")
     /** Set grams and/or food; pass JsonNull to clear. Returns the whole updated recipe. */
     suspend fun patchIngredient(id: Int, patch: JsonObject): RecipeDetail = patch("/ingredients/$id", patch)

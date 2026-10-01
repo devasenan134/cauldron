@@ -27,11 +27,28 @@ data class RecipeSummary(
     val isPrep: Boolean = false,
 )
 
+/** A family of tags. mode: how it combines when more than one is picked: "one" (pick one), "any" (OR), "all" (AND). */
 @Serializable
-data class TagGroup(val name: String, val tags: List<String>)
+data class TagGroup(val name: String, val tags: List<String>, val mode: String = "any")
+
+/** For a filter: how many recipes each option would show (see GET /recipes/facets). */
+@Serializable
+data class FacetCounts(
+    val cuisine: Map<String, Int> = emptyMap(),
+    val category: Map<String, Int> = emptyMap(),
+    val tag: Map<String, Int> = emptyMap(),
+    val time: Map<String, Int> = emptyMap(),
+    val kcal: Map<String, Int> = emptyMap(),
+    val mine: Int = 0,
+    val prep: Int = 0,
+)
 
 @Serializable
-data class Facets(val cuisines: List<String>, val categories: List<String>, val tagGroups: List<TagGroup> = emptyList())
+data class Facets(
+    val cuisines: List<String>, val categories: List<String>, val tagGroups: List<TagGroup> = emptyList(),
+    /** How many recipes the filter asked about shows; null from a server too old to say. */
+    val total: Int? = null, val counts: FacetCounts? = null,
+)
 
 /** What the recipe list is filtered and sorted by. */
 data class RecipeFilter(
@@ -39,18 +56,29 @@ data class RecipeFilter(
     val cuisines: Set<String> = emptySet(),
     val categories: Set<String> = emptySet(),
     val tags: Set<String> = emptySet(),
-    val maxMinutes: Int? = null,
+    val time: TimeRange? = null,
     val kcal: KcalRange? = null,
     val mine: Boolean = false,
     val prep: Boolean = false,
     val sort: String = "title",
 ) {
     /** How many filters are on (the search box and sort don't count). */
-    val count get() = cuisines.size + categories.size + tags.size + listOfNotNull(maxMinutes, kcal).size + (if (mine) 1 else 0) + (if (prep) 1 else 0)
+    val count get() = cuisines.size + categories.size + tags.size + listOfNotNull(time, kcal).size + (if (mine) 1 else 0) + (if (prep) 1 else 0)
+
+    /** Pick or unpick a tag; in a pick-one family (Difficulty) picking one drops the family's others. */
+    fun toggleTag(group: TagGroup, t: String): RecipeFilter = when {
+        group.mode != "one" || t in tags -> copy(tags = if (t in tags) tags - t else tags + t)
+        else -> copy(tags = tags - group.tags.toSet() + t)
+    }
 }
 
-enum class KcalRange(val label: String, val min: Int?, val max: Int?) {
-    Light("Under 400", null, 400), Medium("400–700", 400, 700), Hearty("Over 700", 700, null),
+// The presets the server knows by key. "Ready in" is the only time filter (Cook Well's time tags fold into it).
+enum class TimeRange(val key: String, val label: String) {
+    Min15("15", "≤ 15 min"), Min30("30", "≤ 30 min"), Min45("45", "≤ 45 min"), Hour("60", "≤ 1 hour"), Long("long", "Over 1 hour"),
+}
+
+enum class KcalRange(val key: String, val label: String) {
+    Light("light", "Under 400"), Medium("medium", "400–700"), Hearty("hearty", "Over 700"),
 }
 
 // A recipe of your own, as sent to the server (same shape as the library's).

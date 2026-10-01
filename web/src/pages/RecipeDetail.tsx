@@ -41,14 +41,14 @@ export default function RecipeDetail() {
 
   return (
     <div className="rise">
-      <div className="mb-4 flex items-center justify-between">
-        <Link to="/recipes" className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">← Recipes</Link>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <Link to="/recipes" className="press inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">← Recipes</Link>
         <div className="flex items-center gap-2">
           <FavoriteButton r={r} />
           <FolderButton r={r} />
           {/* Your own recipes can be rewritten (the owner also rewrites the libraries). */}
           {r.can_edit && (
-            <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit recipe</Link>
+            <Link to={`/recipes/${r.id}/edit`} className="press inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-paper px-4 py-2 text-sm font-semibold ring-1 ring-stone-200">✎ Edit<span className="hidden sm:inline"> recipe</span></Link>
           )}
         </div>
       </div>

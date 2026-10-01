@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, KCAL_RANGES, type Facets, type ImportJob, type RecipeFilter } from '../api'
+import { api, KCAL_RANGES, TIME_RANGES, type Facets, type ImportJob, type RecipeFilter, type TagGroup } from '../api'
 import { Button, Chip, Empty, PageHeader, Shimmer } from '../components/ui'
 import { thumb } from '../format'
 import { useDebounced } from '../useDebounced'
@@ -9,26 +9,40 @@ import { useDebounced } from '../useDebounced'
 const SORTS: [RecipeFilter['sort'], string][] = [
   ['title', 'A–Z'], ['quickest', 'Quickest'], ['lowest_kcal', 'Fewest calories'], ['highest_protein', 'Most protein'], ['newest', 'Newest'],
 ]
-const TIMES = [15, 30, 45, 60]
-const EMPTY: RecipeFilter = { q: '', cuisines: [], categories: [], tags: [], maxMinutes: null, kcal: null, mine: false, prep: false, sort: 'title' }
+const EMPTY: RecipeFilter = { q: '', cuisines: [], categories: [], tags: [], time: null, kcal: null, mine: false, prep: false, sort: 'title' }
+// Links from before "Ready in" was the only time filter: ?max=30, or Cook Well's time tags.
+const OLD_TIME_TAGS: Record<string, RecipeFilter['time']> = { Quick: '30', 'Under 1 Hour': '60', 'I Got Time': 'long' }
 
 const count = (f: RecipeFilter) =>
-  f.cuisines.length + f.categories.length + f.tags.length + (f.maxMinutes ? 1 : 0) + (f.kcal ? 1 : 0) + (f.mine ? 1 : 0) + (f.prep ? 1 : 0)
+  f.cuisines.length + f.categories.length + f.tags.length + (f.time ? 1 : 0) + (f.kcal ? 1 : 0) + (f.mine ? 1 : 0) + (f.prep ? 1 : 0)
 const toggle = (list: string[], x: string) => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x])
+const oneOf = <T extends string>(options: Record<T, unknown>, x: string | null): T | null =>
+  x != null && Object.hasOwn(options, x) ? (x as T) : null
 
-/** The filter lives in the address (?q=…&tag=…), so a filtered list can be bookmarked and Back restores it. */
+/** Pick or unpick a tag; in a pick-one family (Difficulty) picking one drops the family's others. */
+function toggleTag(f: RecipeFilter, group: TagGroup, t: string): RecipeFilter {
+  if (group.mode !== 'one' || f.tags.includes(t)) return { ...f, tags: toggle(f.tags, t) }
+  return { ...f, tags: [...f.tags.filter((x) => !group.tags.includes(x)), t] }
+}
+
+/** The filter lives in the address (?q=…&tag=…), so a filtered list can be bookmarked and Back restores it.
+ *  Anything in the address that isn't an option is ignored rather than trusted. */
 function useFilter(): [RecipeFilter, (f: RecipeFilter) => void] {
   const [params, setParams] = useSearchParams()
+  const tags = params.getAll('tag').filter(Boolean)
+  const oldMax = Number(params.get('max'))
   const f: RecipeFilter = {
     q: params.get('q') ?? '',
-    cuisines: params.getAll('cuisine'),
-    categories: params.getAll('category'),
-    tags: params.getAll('tag'),
-    maxMinutes: params.get('max') ? Number(params.get('max')) : null,
-    kcal: (params.get('kcal') as RecipeFilter['kcal']) || null,
+    cuisines: params.getAll('cuisine').filter(Boolean),
+    categories: params.getAll('category').filter(Boolean),
+    tags: tags.filter((t) => !(t in OLD_TIME_TAGS)),
+    time: oneOf(TIME_RANGES, params.get('time'))
+      ?? (oldMax ? oneOf(TIME_RANGES, String(oldMax)) : null)
+      ?? tags.map((t) => OLD_TIME_TAGS[t]).find(Boolean) ?? null,
+    kcal: oneOf(KCAL_RANGES, params.get('kcal')),
     mine: params.get('mine') === '1',
     prep: params.get('prep') === '1',
-    sort: (params.get('sort') as RecipeFilter['sort']) || 'title',
+    sort: SORTS.find(([v]) => v === params.get('sort'))?.[0] ?? 'title',
   }
   const set = (n: RecipeFilter) => {
     const p = new URLSearchParams()
@@ -36,7 +50,7 @@ function useFilter(): [RecipeFilter, (f: RecipeFilter) => void] {
     n.cuisines.forEach((c) => p.append('cuisine', c))
     n.categories.forEach((c) => p.append('category', c))
     n.tags.forEach((t) => p.append('tag', t))
-    if (n.maxMinutes) p.set('max', String(n.maxMinutes))
+    if (n.time) p.set('time', n.time)
     if (n.kcal) p.set('kcal', n.kcal)
     if (n.mine) p.set('mine', '1')
     if (n.prep) p.set('prep', '1')
@@ -56,14 +70,18 @@ export default function Recipes() {
   const navigate = useNavigate()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (debouncedQ !== filter.q) setFilter({ ...filter, q: debouncedQ }) }, [debouncedQ])
+  // The address changed by itself (Back, a link): show its search in the box.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (filter.q !== debouncedQ) setQ(filter.q) }, [filter.q])
 
-  const facets = useQuery({ queryKey: ['facets'], queryFn: api.facets })
+  const facets = useQuery({ queryKey: ['recipes', 'facets', filter], queryFn: () => api.facets(filter), placeholderData: (prev) => prev })
   const recipes = useQuery({ queryKey: ['recipes', filter], queryFn: () => api.recipesFiltered(filter), placeholderData: (prev) => prev })
   const n = count(filter)
+  const clearFilters = () => setFilter({ ...EMPTY, q: filter.q, sort: filter.sort })
 
   return (
     <div className="rise">
-      <PageHeader title="Recipes" subtitle={recipes.data ? `${recipes.data.length} recipes` : 'Loading…'}
+      <PageHeader title="Recipes" subtitle={recipes.data ? `${recipes.data.length} recipe${recipes.data.length === 1 ? '' : 's'}` : 'Loading…'}
         actions={<div className="flex gap-2">
           <Button variant="ghost" onClick={() => setImporting(true)}>🔗 Import</Button>
           <Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>
@@ -85,11 +103,12 @@ export default function Recipes() {
       </div>
 
       <div className="-mx-5 mt-4 flex gap-2 overflow-x-auto px-5 pb-2 [scrollbar-width:none]">
-        <Chip selected={n === 0} onClick={() => setFilter({ ...EMPTY, q: filter.q, sort: filter.sort })}>All</Chip>
+        <Chip selected={n === 0} onClick={clearFilters}>All</Chip>
         <Chip selected={filter.mine} onClick={() => setFilter({ ...filter, mine: !filter.mine })}>My recipes</Chip>
         <Chip selected={filter.prep} onClick={() => setFilter({ ...filter, prep: !filter.prep })}>🫙 Prepped</Chip>
         {facets.data?.categories.map((c) => (
-          <Chip key={c} selected={filter.categories.includes(c)} onClick={() => setFilter({ ...filter, categories: toggle(filter.categories, c) })}>{c}</Chip>
+          <Chip key={c} selected={filter.categories.includes(c)} disabled={facets.data?.counts?.category[c] === 0 && !filter.categories.includes(c)}
+            onClick={() => setFilter({ ...filter, categories: toggle(filter.categories, c) })}>{c}</Chip>
         ))}
       </div>
 
@@ -107,7 +126,12 @@ export default function Recipes() {
               <Button onClick={() => setImporting(true)}>🔗 Import</Button>
               <Button variant="ghost" onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>
             </div>} />
-        : <Empty emoji="🔍" title="No recipes found" body="Try another word, or fewer filters." />)}
+        : <Empty emoji="🔍" title="No recipes found"
+            body={filter.q && n ? `Nothing matches “${filter.q}” with these filters.` : filter.q ? `Nothing matches “${filter.q}”.` : 'Nothing matches all of these filters.'}
+            action={<div className="flex flex-wrap justify-center gap-2">
+              {n > 0 && <Button onClick={clearFilters}>Clear filters</Button>}
+              {filter.q && <Button variant="ghost" onClick={() => setQ('')}>Clear search</Button>}
+            </div>} />)}
 
       <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {recipes.isPending && Array.from({ length: 10 }, (_, i) => (
@@ -130,50 +154,67 @@ export default function Recipes() {
       </div>
 
       {importing && <ImportDialog initial={new URLSearchParams(location.search).get('import') ?? ''} onClose={() => setImporting(false)} />}
-      {panel && <FilterPanel initial={filter} facets={facets.data} onClose={() => setPanel(false)} onApply={(f) => { setFilter({ ...f, q: filter.q }); setPanel(false) }} />}
+      {panel && <FilterPanel initial={filter} onClose={() => setPanel(false)} onApply={(f) => { setFilter({ ...f, q: filter.q }); setPanel(false) }} />}
     </div>
   )
 }
 
-function FilterPanel({ initial, facets, onClose, onApply }: { initial: RecipeFilter; facets?: Facets; onClose: () => void; onApply: (f: RecipeFilter) => void }) {
+const MODE_HINT = { one: 'pick one', any: 'any of these', all: 'all you pick' } as const
+
+/** The filters, with how many recipes each option would show given the rest: options that would show
+ *  none are greyed out, so a combination that can't match anything can't be picked. */
+function FilterPanel({ initial, onClose, onApply }: { initial: RecipeFilter; onClose: () => void; onApply: (f: RecipeFilter) => void }) {
   const [f, setF] = useState(initial)
   const n = count(f)
+  const facets = useQuery({ queryKey: ['recipes', 'facets', f], queryFn: () => api.facets(f), placeholderData: (prev) => prev })
+  const data: Facets | undefined = facets.data
+  const counts = data?.counts
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
   }, [onClose])
+  // One chip: its count (if known) and greyed out when picking it would show nothing.
+  const option = (key: string, label: string, selected: boolean, n: number | undefined, onClick: () => void) => (
+    <Chip key={key} selected={selected} disabled={!selected && n === 0} onClick={onClick}>
+      {label}{n != null && <span className={`ml-1.5 font-normal ${selected ? 'text-cream/70' : 'text-stone-400'}`}>{n}</span>}
+    </Chip>
+  )
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div className="rise flex h-full w-full max-w-md flex-col bg-cream shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center px-6 pb-2 pt-6">
+        <div className="flex items-center px-6 pb-2 pt-[max(1.5rem,env(safe-area-inset-top))]">
           <h2 className="flex-1 font-display text-3xl font-extrabold">Filters</h2>
           <button className="font-semibold text-stone-500 hover:text-ink" onClick={() => setF({ ...EMPTY, q: f.q })}>Reset</button>
-          <button className="ml-4 text-xl text-stone-500 hover:text-ink" aria-label="Close" onClick={onClose}>✕</button>
+          <button className="ml-4 p-1 text-xl text-stone-500 hover:text-ink" aria-label="Close" onClick={onClose}>✕</button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 pb-4">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
           <Group title="Sort by">{SORTS.map(([v, l]) => <Chip key={v} selected={f.sort === v} onClick={() => setF({ ...f, sort: v })}>{l}</Chip>)}</Group>
-          {!!facets?.categories.length && (
-            <Group title="Meal">{facets.categories.map((c) => <Chip key={c} selected={f.categories.includes(c)} onClick={() => setF({ ...f, categories: toggle(f.categories, c) })}>{c}</Chip>)}</Group>
+          {!!data?.categories.length && (
+            <Group title="Meal" hint={MODE_HINT.any}>{data.categories.map((c) =>
+              option(c, c, f.categories.includes(c), counts?.category[c] ?? 0, () => setF({ ...f, categories: toggle(f.categories, c) })))}</Group>
           )}
-          <Group title="Ready in">
-            {TIMES.map((m) => <Chip key={m} selected={f.maxMinutes === m} onClick={() => setF({ ...f, maxMinutes: f.maxMinutes === m ? null : m })}>≤ {m} min</Chip>)}
+          <Group title="Ready in" hint={MODE_HINT.one}>
+            {(Object.keys(TIME_RANGES) as (keyof typeof TIME_RANGES)[]).map((k) =>
+              option(k, TIME_RANGES[k], f.time === k, counts?.time[k], () => setF({ ...f, time: f.time === k ? null : k })))}
           </Group>
-          <Group title="Calories per serving">
-            {(Object.keys(KCAL_RANGES) as (keyof typeof KCAL_RANGES)[]).map((k) => (
-              <Chip key={k} selected={f.kcal === k} onClick={() => setF({ ...f, kcal: f.kcal === k ? null : k })}>{KCAL_RANGES[k][0]}</Chip>
-            ))}
+          <Group title="Calories per serving" hint={MODE_HINT.one}>
+            {(Object.keys(KCAL_RANGES) as (keyof typeof KCAL_RANGES)[]).map((k) =>
+              option(k, KCAL_RANGES[k], f.kcal === k, counts?.kcal[k], () => setF({ ...f, kcal: f.kcal === k ? null : k })))}
           </Group>
-          {facets?.tag_groups.map((g) => (
-            <Group key={g.name} title={g.name}>{g.tags.map((t) => <Chip key={t} selected={f.tags.includes(t)} onClick={() => setF({ ...f, tags: toggle(f.tags, t) })}>{t}</Chip>)}</Group>
+          {data?.tag_groups.map((g) => (
+            <Group key={g.name} title={g.name} hint={MODE_HINT[g.mode]}>{g.tags.map((t) =>
+              option(t, t, f.tags.includes(t), counts?.tag[t] ?? 0, () => setF(toggleTag(f, g, t))))}</Group>
           ))}
-          {!!facets?.cuisines.length && (
-            <Group title="Cuisine">{facets.cuisines.map((c) => <Chip key={c} selected={f.cuisines.includes(c)} onClick={() => setF({ ...f, cuisines: toggle(f.cuisines, c) })}>{c}</Chip>)}</Group>
+          {!!data?.cuisines.length && (
+            <Group title="Cuisine" hint={MODE_HINT.any}>{data.cuisines.map((c) =>
+              option(c, c, f.cuisines.includes(c), counts?.cuisine[c] ?? 0, () => setF({ ...f, cuisines: toggle(f.cuisines, c) })))}</Group>
           )}
         </div>
-        <div className="border-t border-stone-200 p-5">
+        <div className="border-t border-stone-200 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <Button className="w-full py-3.5 text-base" onClick={() => onApply(f)}>
-            {n === 0 ? 'Show all recipes' : `Show recipes · ${n} filter${n === 1 ? '' : 's'}`}
+            {data?.total == null ? (n === 0 ? 'Show all recipes' : `Show recipes · ${n} filter${n === 1 ? '' : 's'}`)
+              : data.total === 0 ? 'No recipes match' : `Show ${data.total} recipe${data.total === 1 ? '' : 's'}`}
           </Button>
         </div>
       </div>
@@ -181,10 +222,12 @@ function FilterPanel({ initial, facets, onClose, onApply }: { initial: RecipeFil
   )
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+function Group({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <div className="mt-5">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">{title}</p>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">
+        {title}{hint && <span className="ml-2 font-normal normal-case tracking-normal text-stone-400">{hint}</span>}
+      </p>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   )

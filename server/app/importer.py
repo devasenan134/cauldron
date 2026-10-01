@@ -449,9 +449,9 @@ RULES = """- Group ingredients into sections when the recipe has parts ("Marinad
 - Steps: short, clear instructions in order, each with an optional short title.
 - servings: how many portions it makes (a number). total_minutes: the total time if said or clear.
 - category: one of Breakfast, Lunch, Dinner, Side, Snack, Dessert, Drink. cuisine: e.g. Indian, Mexican.
-- tags: pick any that fit from: Easy, Level Up, Quick, Under 1 Hour, I Got Time, Chicken, Beef, Pork,
-  Eggs, Seafood, Vegetarian, Stir Fry, Bake, Braise, Sear, Crispy, Grill, High Protein, Gluten Free,
-  Low Fat, Low Carb, Dairy Free, Meal Prep.
+- tags: pick any that fit from: Easy, Level Up, Chicken, Beef, Pork, Eggs, Seafood, Vegetarian, Stir Fry,
+  Bake, Braise, Sear, Crispy, Grill, High Protein, Gluten Free, Low Fat, Low Carb, Dairy Free, Meal Prep.
+  (Not time: that's total_minutes.)
 """
 
 PROMPT = """You turn cooking videos into recipes for a recipe app.

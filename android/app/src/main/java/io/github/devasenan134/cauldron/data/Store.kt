@@ -14,6 +14,9 @@ class Store(private val api: Api) {
     val recipes: StateFlow<Map<String, List<RecipeSummary>>> = _recipes
     private val _facets = MutableStateFlow<Facets?>(null)
     val facets: StateFlow<Facets?> = _facets
+    private val _filterFacets = MutableStateFlow<Map<String, Facets>>(emptyMap())
+    /** Facets with counts, by recipesKey() of the filter they count for. */
+    val filterFacets: StateFlow<Map<String, Facets>> = _filterFacets
     private val _recipe = MutableStateFlow<Map<Int, RecipeDetail>>(emptyMap())
     val recipe: StateFlow<Map<Int, RecipeDetail>> = _recipe
     private val _plans = MutableStateFlow<Map<String, Plan>>(emptyMap())
@@ -31,11 +34,15 @@ class Store(private val api: Api) {
     }
 
     /** A recipe was created, changed or deleted: every cached list may be stale. */
-    fun recipesChanged() = _recipes.update { emptyMap() }
+    fun recipesChanged() { _recipes.update { emptyMap() }; _filterFacets.update { emptyMap() } }
 
     fun forgetRecipe(id: Int) = _recipe.update { it - id }
 
     suspend fun loadFacets() { _facets.value = api.facets() }
+    suspend fun loadFacets(f: RecipeFilter) {
+        val facets = api.facets(f)
+        _filterFacets.update { it + (recipesKey(f) to facets) }
+    }
 
     suspend fun loadRecipe(id: Int) = api.recipe(id).also { putRecipe(it) }
     fun putRecipe(r: RecipeDetail) = _recipe.update { it + (r.id to r) }
@@ -72,7 +79,7 @@ class Store(private val api: Api) {
     }
 
     fun clear() {
-        _recipes.value = emptyMap(); _facets.value = null; _recipe.value = emptyMap()
+        _recipes.value = emptyMap(); _facets.value = null; _filterFacets.value = emptyMap(); _recipe.value = emptyMap()
         _plans.value = emptyMap(); _batches.value = null; _prepStock.value = null
     }
 }

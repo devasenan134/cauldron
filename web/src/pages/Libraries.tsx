@@ -102,7 +102,7 @@ function AddDialog({ library, onClose, onAdded }: { library: LibraryName; onClos
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const mine = useQuery({ queryKey: ['recipes', 'mine-for-library'], queryFn: () => api.recipesFiltered({
-    q: '', cuisines: [], categories: [], tags: [], maxMinutes: null, kcal: null, mine: true, prep: false, sort: 'title' }) })
+    q: '', cuisines: [], categories: [], tags: [], time: null, kcal: null, mine: true, prep: false, sort: 'title' }) })
   const add = useMutation({ mutationFn: (id: number) => api.addToLibrary(library, id), onSuccess: onAdded, onError: (e: Error) => setError(reason(e)) })
   const shown = (mine.data ?? []).filter((r) => r.title.toLowerCase().includes(q.trim().toLowerCase()))
   return (
