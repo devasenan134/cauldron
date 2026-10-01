@@ -40,6 +40,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,6 +105,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
     var addingMeal by remember { mutableStateOf("dinner") }
     var addingOpen by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf<PlanEntry?>(null) }
+    var portioning by remember { mutableStateOf<PlanEntry?>(null) }
     var groceryDialog by remember { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf("day") } // "day" or "week"
     var noting by remember { mutableStateOf<NoteTarget?>(null) }
@@ -119,7 +122,7 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
         store.refreshPlans()
     }
     val log = rememberMealLog { msg -> scope.launch { snackbar.showSnackbar(msg) } }
-    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, openRecipe = openRecipe, onEditNote = { noting = NoteTarget(it.day, it.meal, it) }, log = log)
+    val actions = PlanActions(app, week, ::act, onMove = { moving = it }, onPortions = { portioning = it }, openRecipe = openRecipe, onEditNote = { noting = NoteTarget(it.day, it.meal, it) }, log = log)
     val onAdd = { day: String?, meal: String -> adding = day; addingMeal = meal; addingOpen = true }
     val onNote = { day: String?, meal: String -> noting = NoteTarget(day, meal, null) }
     val weekKcal = plan?.days?.values?.flatten()?.sumOf { it.kcal ?: 0.0 } ?: 0.0
@@ -175,6 +178,12 @@ fun PlannerScreen(openRecipe: (Int) -> Unit, openGrocery: () -> Unit) {
             act { app.api.updateEntry(entry.id, buildJsonObject { put("day", day?.let { JsonPrimitive(it) } ?: JsonNull); put("meal", meal) }) }
         }
     }
+    portioning?.let { entry ->
+        PortionsSheet(entry, onDismiss = { portioning = null }) { eat, cook ->
+            portioning = null
+            actions.setPortions(entry, eat, cook)
+        }
+    }
     if (groceryDialog) GroceryDialog(week, onDismiss = { groceryDialog = false }) { includeQueue ->
         groceryDialog = false
         scope.launch {
@@ -201,7 +210,7 @@ private fun Plan.moveEntry(id: Int, day: String?, meal: String): Plan {
 /** What a meal card can do. Changes show at once and are then sent to the server. */
 private class PlanActions(
     val app: CauldronApp, val week: String, val act: (suspend () -> Unit) -> Unit,
-    val onMove: (PlanEntry) -> Unit, val openRecipe: (Int) -> Unit, val onEditNote: (PlanEntry) -> Unit,
+    val onMove: (PlanEntry) -> Unit, val onPortions: (PlanEntry) -> Unit, val openRecipe: (Int) -> Unit, val onEditNote: (PlanEntry) -> Unit,
     val log: MealLog,
 ) {
     private fun send(e: PlanEntry, body: JsonObject) = act { app.api.updateEntry(e.id, body) }
@@ -219,6 +228,25 @@ private class PlanActions(
             it.copy(cookPortions = c, portionsLeft = c?.let { new -> (it.portionsLeft ?: (new - it.servings)) + (new - (it.cookPortions ?: new)) })
         }
         send(e, buildJsonObject { put("cook_portions", c?.let { JsonPrimitive(it) } ?: JsonNull) })
+    }
+
+    /** Eating and cooking portions in one go (one request, so the server checks them together).
+     *  cook: null leaves a plain meal plain; a number makes or keeps it a batch. */
+    fun setPortions(e: PlanEntry, eat: Double, cook: Double?) {
+        if (eat == e.servings && cook == e.cookPortions) return
+        app.store.editEntry(e.id) {
+            val was = it.cookPortions
+            val left = when {
+                cook == null -> it.portionsLeft  // a leftover or a plain meal: the server says what changed
+                was == null -> cook - eat  // a new batch
+                else -> (it.portionsLeft ?: (was - it.servings)) + (cook - was) - (eat - it.servings)
+            }
+            it.copy(servings = eat, kcal = it.kcalPerServing?.let { k -> k * eat }, cookPortions = cook, portionsLeft = left)
+        }
+        send(e, buildJsonObject {
+            if (eat != e.servings) put("servings", eat)
+            if (cook != e.cookPortions) put("cook_portions", cook?.let { JsonPrimitive(it) } ?: JsonNull)
+        })
     }
 
     fun setMade(e: PlanEntry, g: Double) {
@@ -419,6 +447,7 @@ private fun CompactMeal(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: B
             DropdownMenu(menu, onDismissRequest = { menu = false }) {
                 if (e.loggable()) LogMenuItems(e, a) { menu = false }
                 DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
+                if (e.hasPortions()) DropdownMenuItem(text = { Text("Change portions") }, onClick = { menu = false; a.onPortions(e) })
                 if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                 if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
                 if (!e.isPrep) DropdownMenuItem(text = { Text("Eat one more") }, onClick = { menu = false; a.setServings(e, e.servings + 1) })
@@ -592,6 +621,7 @@ private fun MealCard(e: PlanEntry, a: PlanActions, canUp: Boolean, canDown: Bool
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Options for ${e.title}") }
                     DropdownMenu(menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Move to another day") }, onClick = { menu = false; a.onMove(e) })
+                        if (e.hasPortions()) DropdownMenuItem(text = { Text("Change portions") }, onClick = { menu = false; a.onPortions(e) })
                         if (canUp) DropdownMenuItem(text = { Text("Move up") }, onClick = { menu = false; a.reorder(e, index - 1) })
                         if (canDown) DropdownMenuItem(text = { Text("Move down") }, onClick = { menu = false; a.reorder(e, index + 1) })
                         if (!e.isLeftover && !e.isOut && e.recipeId != null) {
@@ -690,6 +720,48 @@ private fun MoveSheet(entry: PlanEntry, week: String, onDismiss: () -> Unit, onP
         Spacer(Modifier.height(16.dp))
         DayChips(entry.day, { onPick(it, meal) }, from = week, days = 14, wrap = true)
         Spacer(Modifier.height(40.dp))
+    }
+}
+
+/** A recipe or leftovers on the plan (not a note, a prep made by weight, or a meal eaten out). */
+private fun PlanEntry.hasPortions() = !isNote && !isPrep && !isOut && (recipeId != null || isLeftover)
+
+/** How many portions you eat at this meal and, for a recipe, how many you cook: cooking more than you
+ *  eat makes it a batch, and the rest goes to the fridge for later meals. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PortionsSheet(entry: PlanEntry, onDismiss: () -> Unit, onSave: (eat: Double, cook: Double?) -> Unit) {
+    var eat by remember { mutableStateOf(entry.servings) }
+    var cook by remember { mutableStateOf(entry.cookPortions ?: entry.servings) }
+    val canCook = !entry.isLeftover && entry.recipeId != null
+    // Cooking only what you eat keeps a plain meal plain; a batch stays a batch ("Not a batch" in the menu
+    // undoes it, and takes its leftovers with it).
+    val cookOut = if (!canCook || (entry.cookPortions == null && cook <= eat)) null else maxOf(cook, eat)
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = C.bg) {
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Text("Portions", style = MaterialTheme.typography.headlineSmall)
+            Text(entry.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StepperCard("Eat", if (eat == 1.0) "portion" else "portions", eat, { eat = it; if (cook < it) cook = it }, Modifier.weight(1f), step = 0.5, min = 0.5)
+                if (canCook) StepperCard("Cook", if (cook == 1.0) "portion" else "portions", cook, { cook = it }, Modifier.weight(1f), min = eat)
+            }
+            val left = (cookOut ?: 0.0) - eat
+            Text(
+                when {
+                    entry.isLeftover -> "Taken from the batch in the fridge."
+                    !canCook -> ""
+                    cookOut == null -> "Cook more than you eat to batch cook: the rest goes to the fridge."
+                    left > 0 -> "Batch cook: ${plural(left, "portion")} to the fridge for later."
+                    else -> "Batch cook, nothing left over for later."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp),
+            )
+            Button(
+                onClick = { onSave(eat, cookOut) },
+                colors = ButtonDefaults.buttonColors(containerColor = C.ink, contentColor = C.bg),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 32.dp).height(52.dp),
+            ) { Text("Save", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        }
     }
 }
 
