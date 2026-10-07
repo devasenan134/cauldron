@@ -93,7 +93,7 @@ def platform(url: str) -> str | None:
         return None
     if host in ("youtu.be", "youtube.com") or host.endswith(".youtube.com"):
         return "youtube"
-    if (host == "instagram.com" or host.endswith(".instagram.com")) and re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|tv)/", url):
+    if (host == "instagram.com" or host.endswith(".instagram.com")) and re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|post|posts|tv)(?:/|$)", url):
         return "instagram"
     return "web"
 
@@ -142,8 +142,9 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/shorts/{m[1]}"
     if m := re.search(r"youtube\.com/watch\?.*?v=([\w-]{11})", url):
         return f"https://www.youtube.com/watch?v={m[1]}"
-    if m := re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|tv)/([\w-]+)", url):
-        return f"https://www.instagram.com/{'reel' if m[1] == 'reels' else m[1]}/{m[2]}/"
+    if m := re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|post|posts|tv)/([\w-]+)", url):
+        kind = "reel" if m[1] in ("reel", "reels") else "p"
+        return f"https://www.instagram.com/{kind}/{m[2]}/"
     # Web pages: drop the fragment and tracking parameters (utm_*, fbclid…).
     url = url.split("#")[0]
     if "?" in url:
@@ -183,6 +184,8 @@ def run(job_id: int) -> None:
 def is_instagram_photo_post(info: dict) -> bool:
     """True if this Instagram post is a photo post or multi-image carousel rather than a video Reel."""
     entries = list(info.get("entries") or [])
+    if len(entries) > 1:
+        return True
     if entries:
         return any(
             e.get("ext") in ("jpg", "jpeg", "png", "webp", "heic")
@@ -195,27 +198,31 @@ def is_instagram_photo_post(info: dict) -> bool:
 
 
 def import_instagram_photos(session: Session, job: ImportJob, info: dict, step, tmp: str) -> Recipe:
-    entries = list(info.get("entries") or [])
+    entries = [e for e in (info.get("entries") or []) if e]
     slide_urls: list[str] = []
 
-    def extract_urls(d: dict):
-        if d.get("url") and (d.get("ext") in ("jpg", "jpeg", "png", "webp", "heic") or not d.get("vcodec") or d.get("vcodec") == "none"):
-            slide_urls.append(d["url"])
-        if d.get("thumbnail"):
-            slide_urls.append(d["thumbnail"])
+    def best_image_for_entry(d: dict) -> str | None:
+        if d.get("url") and (d.get("ext") in ("jpg", "jpeg", "png", "webp", "heic") or d.get("vcodec") == "none"):
+            return d["url"]
+        for f in reversed(d.get("formats") or []):
+            if isinstance(f, dict) and f.get("url") and f.get("vcodec") == "none":
+                return f["url"]
         for th in reversed(d.get("thumbnails") or []):
             if isinstance(th, dict) and th.get("url"):
-                slide_urls.append(th["url"])
-                break
-        for f in d.get("formats") or []:
-            if isinstance(f, dict) and f.get("url") and f.get("vcodec") == "none":
-                slide_urls.append(f["url"])
+                return th["url"]
+        if d.get("thumbnail"):
+            return d["thumbnail"]
+        return None
 
     if entries:
         for e in entries:
-            extract_urls(e)
+            u = best_image_for_entry(e)
+            if u:
+                slide_urls.append(u)
     else:
-        extract_urls(info)
+        u = best_image_for_entry(info)
+        if u:
+            slide_urls.append(u)
 
     slide_urls = list(dict.fromkeys(slide_urls))
 
@@ -516,7 +523,14 @@ def person(author) -> str | None:
 # --- the video's page
 
 def ytdlp_opts(kind: str, tmp: str) -> dict:
-    opts = {"quiet": True, "no_warnings": True, "noplaylist": kind != "instagram", "paths": {"home": tmp}, "outtmpl": "video.%(ext)s"}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": kind != "instagram",
+        "paths": {"home": tmp},
+        "outtmpl": "video.%(ext)s",
+        "ignore_no_formats_error": True,
+    }
     if kind == "instagram" and Path(COOKIES).is_file():
         opts["cookiefile"] = COOKIES
     return opts
@@ -526,8 +540,9 @@ def video_info(url: str, kind: str, tmp: str) -> dict:
     from yt_dlp import YoutubeDL
     from yt_dlp.utils import DownloadError
 
+    opts = ytdlp_opts(kind, tmp)
     try:
-        with YoutubeDL(ytdlp_opts(kind, tmp)) as ydl:
+        with YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False)
     except DownloadError as e:
         text = str(e).lower()
@@ -535,7 +550,19 @@ def video_info(url: str, kind: str, tmp: str) -> dict:
             raise ImportError_("Instagram wants a login for that post. The server needs Instagram cookies (see Settings).") from e
         if "private" in text or "unavailable" in text:
             raise ImportError_("That post or video is private or unavailable.") from e
-        raise ImportError_(f"Couldn't open that link ({str(e).split(':')[-1].strip()[:120]}).") from e
+        if kind == "instagram" and ("format" in text or "video" in text):
+            try:
+                flat_opts = opts | {"extract_flat": True}
+                with YoutubeDL(flat_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if info:
+                        return info
+            except Exception:
+                pass
+        err_detail = str(e).split(":")[-1].strip()
+        if "github.com" in err_detail or "issue" in err_detail.lower():
+            err_detail = str(e).splitlines()[0].split(":")[-1].strip()
+        raise ImportError_(f"Couldn't open that link ({err_detail[:120]}).") from e
 
 
 def download(url: str, tmp: str) -> Path:
