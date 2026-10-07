@@ -321,7 +321,7 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
     return res.json() as Promise<ImportJob>
   },
-  importJob: (id: number) => request<ImportJob>('GET', `/import/${id}`),
+  importJob: (id: number) => request<ImportJob>('GET', `/import/${id}?_t=${Date.now()}`),
   appReleases: () => request<AppRelease[]>('GET', '/app/releases'),
   recipes: (p: { q?: string; cuisine?: string; category?: string } = {}) =>
     request<RecipeSummary[]>('GET', `/recipes?${qs(p)}`),

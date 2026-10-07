@@ -190,7 +190,7 @@ private fun QuickRow(filter: RecipeFilter, facets: Facets?, onChange: (RecipeFil
         items(categories) { c ->
             val selected = c in filter.categories
             Chip(c, selected = selected, enabled = selected || facets?.counts?.category?.get(c) != 0) {
-                onChange(filter.copy(categories = filter.categories.toggle(c)))
+                onChange(filter.copy(categories = if (filter.categories == setOf(c)) emptySet() else setOf(c)))
             }
         }
     }
@@ -234,7 +234,7 @@ private fun FilterSheet(initial: RecipeFilter, onDismiss: () -> Unit, onApply: (
                     cats.forEach { c -> Option(c, c in f.categories, counts?.category?.get(c) ?: counts?.let { 0 }) { f = f.copy(categories = f.categories.toggle(c)) } }
                 }
             }
-            FilterGroup("Ready in", MODE_HINT["one"]) {
+            FilterGroup("Time", MODE_HINT["one"]) {
                 TimeRange.entries.forEach { t -> Option(t.label, f.time == t, counts?.time?.get(t.key)) { f = f.copy(time = if (f.time == t) null else t) } }
             }
             FilterGroup("Calories per serving", MODE_HINT["one"]) {

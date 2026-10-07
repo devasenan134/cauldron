@@ -159,11 +159,11 @@ TAG_GROUPS = {
     "Difficulty": ["Easy", "Level Up"],
     "Mood": ["Feel Good", "Bad Day", "Happy", "Lazy", "Curious", "Guilty", "Party", "Impress", "Down",
              "Energized", "Chill", "Date Night"],
-    "Protein": ["Chicken", "Beef", "Pork", "Eggs", "Seafood", "Vegetarian"],
-    "Method": ["Stir Fry", "Bake", "Braise", "Sear", "Crispy", "Grill", "Deep Fry", "Framework"],
-    "Diet": ["High Protein", "Gluten Free", "Low Fat", "Low Carb", "Dairy Free"],
+    "Protein": ["Chicken", "Beef", "Pork", "Eggs", "Seafood"],
+    "Method": ["Stir Fry", "Bake", "Braise", "Sear", "Crispy", "Grill", "Deep Fry"],
+    "Diet": ["Vegetarian", "High Protein", "Gluten Free", "Low Fat", "Low Carb", "Dairy Free"],
 }
-GROUP_MODE = {"Difficulty": "one", "Diet": "all"}  # the rest: "any"
+GROUP_MODE = {"Difficulty": "one", "Mood": "one", "Protein": "one", "Diet": "all"}  # the rest: "any"
 MORE = "More"  # tags in no family (used by 3+ recipes), offered together as "any"
 GROUP_OF = {t.lower(): g for g, tags in TAG_GROUPS.items() for t in tags}
 # Cook Well's time tags, as minutes: what a recipe without minutes is taken to need. As filters they're

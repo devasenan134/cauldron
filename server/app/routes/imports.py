@@ -4,7 +4,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from sqlmodel import Session, SQLModel, col, func, select
 
 from .. import importer
@@ -56,7 +56,7 @@ def start(body: ImportIn, tasks: BackgroundTasks, session: Session = Depends(get
     """Start importing a video or a recipe page; poll GET /import/{id}. Already imported? Returns that recipe at once."""
     m = re.search(r"https?://\S+", body.url)
     if not m or importer.platform(m[0]) is None:
-        raise HTTPException(400, "Paste a link to a recipe page, a YouTube video or an Instagram Reel.")
+        raise HTTPException(400, "Paste a link to a recipe page, a YouTube video or an Instagram post.")
     url = importer.clean_url(m[0])
     if existing := importer.find_existing(session, user.id, url):
         job = importer.ImportJob(owner_id=user.id, url=url, status="done", message=existing.title, recipe_id=existing.id)
@@ -103,7 +103,8 @@ async def start_file(request: Request, tasks: BackgroundTasks, name: str = "", s
 
 
 @router.get("/{job_id}", response_model=JobOut)
-def get(job_id: int, session: Session = Depends(get_session), user: User = Depends(current_user)):
+def get(job_id: int, response: Response, session: Session = Depends(get_session), user: User = Depends(current_user)):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     job = session.get(importer.ImportJob, job_id)
     if job is None or job.owner_id != user.id:
         raise HTTPException(404, "import not found")

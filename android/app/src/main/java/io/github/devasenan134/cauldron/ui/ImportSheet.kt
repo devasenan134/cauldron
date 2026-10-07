@@ -75,13 +75,21 @@ fun ImportSheet(initial: String?, file: Uri? = null, onDismiss: () -> Unit, open
                     app.api.importFile(bytes, type, name)
                 } else app.api.startImport(link!!)
                 job = j
+                var consecutiveFails = 0
                 while (j.status !in setOf("done", "failed")) {
                     delay(1500)
-                    j = app.api.importJob(j.id)
-                    job = j
+                    try {
+                        j = app.api.importJob(j.id)
+                        job = j
+                        consecutiveFails = 0
+                    } catch (e: Exception) {
+                        consecutiveFails++
+                        if (consecutiveFails >= 4) throw e
+                    }
                 }
                 if (j.status == "done" && j.recipeId != null) {
                     app.store.recipesChanged()
+                    delay(500)
                     openRecipe(j.recipeId)
                     onDismiss()
                 } else error = j.message
@@ -95,10 +103,11 @@ fun ImportSheet(initial: String?, file: Uri? = null, onDismiss: () -> Unit, open
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = C.bg) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
             Text("Import a recipe", style = MaterialTheme.typography.headlineSmall)
-            Text("From a recipe website, a YouTube video, a Short or an Instagram Reel, or a file: a PDF, a photo of a recipe, or a YAML/JSON recipe. Cauldron reads it, keeps the amounts and macros it gives, and writes the recipe.",
+            Text("From a recipe website, a YouTube video, a Short or an Instagram post or Reel, or a file: a PDF, a photo of a recipe, or a YAML/JSON recipe. Cauldron reads it, keeps the amounts and macros it gives, and writes the recipe.",
                 color = C.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+            val isDone = job?.status == "done"
             val running = job != null && job?.status !in setOf("done", "failed")
-            if (!running) {
+            if (!running && !isDone) {
                 OutlinedTextField(url, { url = it }, placeholder = { Text("Paste a link") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
                 Row(Modifier.padding(top = 12.dp)) {
@@ -111,14 +120,24 @@ fun ImportSheet(initial: String?, file: Uri? = null, onDismiss: () -> Unit, open
                 }
             } else {
                 val idx = STEPS.indexOfFirst { it.first == job?.status }.coerceAtLeast(0)
+                val progress = when (job?.status) {
+                    "done" -> 1f
+                    "saving" -> 0.85f
+                    "reading" -> 0.65f
+                    "fetching" -> 0.35f
+                    "queued" -> 0.15f
+                    else -> 0.2f
+                }
+                val label = if (isDone) (job?.message?.ifBlank { null } ?: "Ready! Opening recipe") + "…"
+                    else (job?.message?.ifBlank { null } ?: STEPS[idx].second) + "…"
                 Column(Modifier.padding(top = 20.dp).fillMaxWidth().background(C.surface, RoundedCornerShape(20.dp)).padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), color = C.go, strokeWidth = 2.5.dp)
-                        Text((job?.message?.ifBlank { null } ?: STEPS[idx].second) + "…", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
+                        Text(label, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
                     }
-                    LinearProgressIndicator(progress = { (idx + 1) / (STEPS.size + 1f) }, color = C.go, trackColor = C.line,
+                    LinearProgressIndicator(progress = { progress }, color = C.go, trackColor = C.line,
                         modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(6.dp))
-                    Text("This takes about a minute. You can close this; it keeps going and shows up in My recipes.",
+                    Text(if (isDone) "Opening recipe now…" else "This takes about a minute. You can close this; it keeps going and shows up in My recipes.",
                         color = C.muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
                 }
             }

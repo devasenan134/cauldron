@@ -266,7 +266,17 @@ fun RecipeEditorScreen(id: Int?, back: () -> Unit, saved: (Int) -> Unit, deleted
                         }
                         // Tags in Cook Well's families (difficulty, time, mood, protein, method, diet).
                         facets?.tagGroups?.filter { it.name != "More" }?.forEach { g ->
-                            Group(g.name) { g.tags.forEach { t -> Chip(t, t in draft.tags) { draft.tags = draft.tags.toggle(t) } } }
+                            Group(g.name) {
+                                g.tags.forEach { t ->
+                                    Chip(t, t in draft.tags) {
+                                        draft.tags = if (g.mode == "one") {
+                                            if (t in draft.tags) draft.tags - t else draft.tags - g.tags.toSet() + t
+                                        } else {
+                                            draft.tags.toggle(t)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

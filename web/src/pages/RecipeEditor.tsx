@@ -190,7 +190,14 @@ export default function RecipeEditor() {
       <datalist id="cuisines">{facets.data?.cuisines.map((c) => <option key={c} value={c} />)}</datalist>
       {facets.data?.tag_groups.filter((g) => g.name !== 'More').map((g) => (
         <Group key={g.name} title={g.name}>
-          {g.tags.map((t) => <Chip key={t} selected={d.tags.includes(t)} onClick={() => set({ tags: d.tags.includes(t) ? d.tags.filter((x) => x !== t) : [...d.tags, t] })}>{t}</Chip>)}
+          {g.tags.map((t) => (
+            <Chip key={t} selected={d.tags.includes(t)} onClick={() => {
+              const next = g.mode === 'one'
+                ? (d.tags.includes(t) ? d.tags.filter((x) => x !== t) : [...d.tags.filter((x) => !g.tags.includes(x)), t])
+                : (d.tags.includes(t) ? d.tags.filter((x) => x !== t) : [...d.tags, t])
+              set({ tags: next })
+            }}>{t}</Chip>
+          ))}
         </Group>
       ))}
 

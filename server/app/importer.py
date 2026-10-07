@@ -93,7 +93,7 @@ def platform(url: str) -> str | None:
         return None
     if host in ("youtu.be", "youtube.com") or host.endswith(".youtube.com"):
         return "youtube"
-    if (host == "instagram.com" or host.endswith(".instagram.com")) and re.search(r"instagram\.com/(?:[\w.]+/)?(reel|reels|p|tv)/", url):
+    if (host == "instagram.com" or host.endswith(".instagram.com")) and re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|tv)/", url):
         return "instagram"
     return "web"
 
@@ -142,7 +142,7 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/shorts/{m[1]}"
     if m := re.search(r"youtube\.com/watch\?.*?v=([\w-]{11})", url):
         return f"https://www.youtube.com/watch?v={m[1]}"
-    if m := re.search(r"instagram\.com/(?:[\w.]+/)?(reel|reels|p|tv)/([\w-]+)", url):
+    if m := re.search(r"instagram\.com/(?:[\w.]+/)*(reel|reels|p|tv)/([\w-]+)", url):
         return f"https://www.instagram.com/{'reel' if m[1] == 'reels' else m[1]}/{m[2]}/"
     # Web pages: drop the fragment and tracking parameters (utm_*, fbclid…).
     url = url.split("#")[0]
@@ -180,19 +180,128 @@ def run(job_id: int) -> None:
                 (UPLOAD_DIR / job.file).unlink(missing_ok=True)
 
 
+def is_instagram_photo_post(info: dict) -> bool:
+    """True if this Instagram post is a photo post or multi-image carousel rather than a video Reel."""
+    entries = list(info.get("entries") or [])
+    if entries:
+        return any(
+            e.get("ext") in ("jpg", "jpeg", "png", "webp", "heic")
+            or not (e.get("duration") or 0)
+            or e.get("vcodec") == "none"
+            for e in entries
+        )
+    ext = (info.get("ext") or "").lower()
+    return not (info.get("duration") or 0) or ext in ("jpg", "jpeg", "png", "webp", "heic") or info.get("vcodec") == "none"
+
+
+def import_instagram_photos(session: Session, job: ImportJob, info: dict, step, tmp: str) -> Recipe:
+    entries = list(info.get("entries") or [])
+    slide_urls: list[str] = []
+
+    def extract_urls(d: dict):
+        if d.get("url") and (d.get("ext") in ("jpg", "jpeg", "png", "webp", "heic") or not d.get("vcodec") or d.get("vcodec") == "none"):
+            slide_urls.append(d["url"])
+        if d.get("thumbnail"):
+            slide_urls.append(d["thumbnail"])
+        for th in reversed(d.get("thumbnails") or []):
+            if isinstance(th, dict) and th.get("url"):
+                slide_urls.append(th["url"])
+                break
+        for f in d.get("formats") or []:
+            if isinstance(f, dict) and f.get("url") and f.get("vcodec") == "none":
+                slide_urls.append(f["url"])
+
+    if entries:
+        for e in entries:
+            extract_urls(e)
+    else:
+        extract_urls(info)
+
+    slide_urls = list(dict.fromkeys(slide_urls))
+
+    slide_images: list[tuple[bytes, str]] = []
+    headers = BROWSER | {"Accept": "image/*", "Referer": "https://www.instagram.com/"}
+    for u in slide_urls[:15]:
+        try:
+            r = safe_get(u, timeout=20, headers=headers, max_bytes=15 * 1024 * 1024)
+            if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/"):
+                mime = r.headers.get("content-type", "").split(";")[0].strip().lower()
+                if mime not in ("image/jpeg", "image/png", "image/webp"):
+                    mime = "image/jpeg"
+                slide_images.append((r.content, mime))
+        except Exception:
+            continue
+
+    if not slide_images:
+        disk_files = sorted(Path(tmp).glob("*.jpg")) + sorted(Path(tmp).glob("*.png")) + sorted(Path(tmp).glob("*.webp"))
+        for f in disk_files[:15]:
+            ext = f.suffix.lower().lstrip(".")
+            mime = "image/png" if ext == "png" else "image/webp" if ext == "webp" else "image/jpeg"
+            slide_images.append((f.read_bytes(), mime))
+
+    step_msg = f"Reading the {len(slide_images)} slides and writing the recipe" if len(slide_images) > 1 else "Reading the post and writing the recipe"
+    step("reading", step_msg)
+
+    parts: list[dict] = []
+    for img_bytes, mime in slide_images:
+        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(img_bytes).decode()}})
+
+    prompt = INSTAGRAM_PROMPT.format(
+        rules=RULES,
+        title=info.get("title") or "",
+        creator=info.get("uploader") or info.get("channel") or "",
+        description=(info.get("description") or "(none)")[:6000],
+        count=len(slide_images),
+    )
+    parts.append({"text": prompt})
+
+    data = ask_gemini(parts, "the Instagram post")
+    if not data.get("is_recipe") or not data.get("ingredients"):
+        raise ImportError_("I couldn't find a recipe in that Instagram post.")
+
+    saved_photo = None
+    if slide_images:
+        try:
+            IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+            ext = {"image/png": "png", "image/webp": "webp"}.get(slide_images[0][1], "jpg")
+            name = f"{os.urandom(12).hex()}.{ext}"
+            (IMAGE_DIR / name).write_bytes(slide_images[0][0])
+            saved_photo = f"/api/images/{name}"
+        except Exception:
+            pass
+
+    step("saving", "Working out calories")
+    info_to_save = dict(info)
+    if saved_photo:
+        info_to_save["saved_image"] = saved_photo
+    return save_import(session, job, info_to_save, data, "instagram")
+
+
 def import_video(session: Session, job: ImportJob, step) -> Recipe:
     if not GEMINI_KEY:
         raise ImportError_("Importing isn't set up on the server yet (no Gemini key).")
     kind = platform(job.url)
     if kind is None:
-        raise ImportError_("Paste a YouTube or Instagram Reel link.")
+        raise ImportError_("Paste a YouTube or Instagram link.")
 
-    step("fetching", "Reading the video's page")
+    step("fetching", "Reading the Instagram post" if kind == "instagram" else "Reading the video's page")
     with tempfile.TemporaryDirectory() as tmp:
         info = video_info(job.url, kind, tmp)
-        if (info.get("duration") or 0) > MAX_SECONDS:
-            raise ImportError_("That video is too long to import (45 minutes at most).")
-        media = None if kind == "youtube" else download(job.url, tmp)
+        if kind == "instagram":
+            if is_instagram_photo_post(info):
+                return import_instagram_photos(session, job, info, step, tmp)
+            if (info.get("duration") or 0) > MAX_SECONDS:
+                raise ImportError_("That video is too long to import (45 minutes at most).")
+            try:
+                media = download(job.url, tmp)
+            except Exception:
+                # If downloading as a video Reel fails (e.g. multi-image post with audio or carousel), fall back to photos
+                log.info("Instagram video download failed, falling back to photo/carousel import: %s", job.url)
+                return import_instagram_photos(session, job, info, step, tmp)
+        else:
+            if (info.get("duration") or 0) > MAX_SECONDS:
+                raise ImportError_("That video is too long to import (45 minutes at most).")
+            media = None if kind == "youtube" else download(job.url, tmp)
 
         step("reading", "Watching the video and writing the recipe")
         data = gemini_recipe(info, kind, job.url, media)
@@ -407,7 +516,7 @@ def person(author) -> str | None:
 # --- the video's page
 
 def ytdlp_opts(kind: str, tmp: str) -> dict:
-    opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "paths": {"home": tmp}, "outtmpl": "video.%(ext)s"}
+    opts = {"quiet": True, "no_warnings": True, "noplaylist": kind != "instagram", "paths": {"home": tmp}, "outtmpl": "video.%(ext)s"}
     if kind == "instagram" and Path(COOKIES).is_file():
         opts["cookiefile"] = COOKIES
     return opts
@@ -423,10 +532,10 @@ def video_info(url: str, kind: str, tmp: str) -> dict:
     except DownloadError as e:
         text = str(e).lower()
         if kind == "instagram" and ("login" in text or "cookies" in text or "rate" in text):
-            raise ImportError_("Instagram wants a login for that Reel. The server needs Instagram cookies (see Settings).") from e
+            raise ImportError_("Instagram wants a login for that post. The server needs Instagram cookies (see Settings).") from e
         if "private" in text or "unavailable" in text:
-            raise ImportError_("That video is private or unavailable.") from e
-        raise ImportError_(f"Couldn't open that video ({str(e).split(':')[-1].strip()[:120]}).") from e
+            raise ImportError_("That post or video is private or unavailable.") from e
+        raise ImportError_(f"Couldn't open that link ({str(e).split(':')[-1].strip()[:120]}).") from e
 
 
 def download(url: str, tmp: str) -> Path:
@@ -436,7 +545,7 @@ def download(url: str, tmp: str) -> Path:
     opts = ytdlp_opts("instagram", tmp) | {"format": "best[height<=720][ext=mp4]/best[ext=mp4]/best"}
     with YoutubeDL(opts) as ydl:
         ydl.download([url])
-    files = list(Path(tmp).glob("video.*"))
+    files = list(Path(tmp).glob("video.*")) or [f for f in Path(tmp).iterdir() if f.suffix.lower() in (".mp4", ".mov", ".m4v", ".webm")]
     if not files:
         raise ImportError_("Couldn't download that Reel.")
     return files[0]
@@ -478,6 +587,25 @@ Video title: {title}
 Creator: {creator}
 
 Description:
+{description}
+"""
+
+INSTAGRAM_PROMPT = """You turn Instagram recipe posts into recipes for a recipe app.
+
+The post has a caption (below) and {count} attached slide photos (photos of the dish, step-by-step photos, ingredient lists, or recipe cards). Read both the caption and the slide photos to write the recipe.
+
+Rules:
+- Instagram creators often write the ingredients, quantities, servings and method in the caption, or put them across the slide images. Check both.
+- Keep each ingredient's amount as written ("200 g", "2 tbsp", "3 cloves", "1 can", "to taste").
+- When an amount is missing, give a sensible one for the recipe's servings and set amounts_estimated to true.
+{rules}- stated_nutrition: ONLY numbers the creator gives (in the caption or on the slides). Never estimate them yourself. Say whether they are per serving or for the whole recipe.
+- If the post is not a recipe, set is_recipe to false.
+- Write in English.
+
+Post title: {title}
+Creator: {creator}
+
+Caption:
 {description}
 """
 
@@ -659,8 +787,8 @@ def parse(resp: dict) -> dict:
 
 def save_import(session: Session, job: ImportJob, info: dict, data: dict, kind: str) -> Recipe:
     """kind: youtube | instagram | web | pdf | photo | file (the recipe's source)."""
-    video = kind in ("youtube", "instagram")
-    where = "the video" if video else "the page" if kind == "web" else f"the {kind if kind != 'pdf' else 'PDF'}"
+    video = (kind == "youtube") or (kind == "instagram" and bool(info.get("duration")))
+    where = "the video" if video else "the Instagram post" if kind == "instagram" else "the page" if kind == "web" else f"the {kind if kind != 'pdf' else 'PDF'}"
     stated = data.get("stated_nutrition") or {}
     source_nutrition = None
     if any(stated.get(k) for k in ("calories", "protein", "carbohydrates", "fat")):
@@ -677,7 +805,7 @@ def save_import(session: Session, job: ImportJob, info: dict, data: dict, kind: 
     body = RecipeIn(
         title=(data.get("title") or info.get("title") or "Imported recipe")[:120],
         description=data.get("description") or "",
-        image_url=keep_thumbnail(info),
+        image_url=info.get("saved_image") or keep_thumbnail(info),
         video_url=job.url if video else None,
         source_url=None if job.file else job.url,
         servings=servings,

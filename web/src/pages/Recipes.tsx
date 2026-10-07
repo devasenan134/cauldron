@@ -61,13 +61,47 @@ function useFilter(): [RecipeFilter, (f: RecipeFilter) => void] {
 }
 
 export default function Recipes() {
+  const qc = useQueryClient()
   const [filter, setFilter] = useFilter()
   const [q, setQ] = useState(filter.q)
   const debouncedQ = useDebounced(q, 300)
   const [panel, setPanel] = useState(false)
-  // ?import=<link> (e.g. shared from another app) opens the import dialog with it.
   const [importing, setImporting] = useState(() => new URLSearchParams(location.search).has('import'))
+  const [activeJobId, setActiveJobId] = useState<number | null>(null)
   const navigate = useNavigate()
+
+  // Poll in background if the import dialog was closed while running
+  useEffect(() => {
+    if (!activeJobId) return
+    let cancelled = false
+    const interval = setInterval(async () => {
+      try {
+        const j = await api.importJob(activeJobId)
+        if (j.status === 'done' || j.status === 'failed') {
+          if (!cancelled) {
+            setActiveJobId(null)
+            qc.invalidateQueries({ queryKey: ['recipes'] })
+            qc.invalidateQueries({ queryKey: ['catalog'] })
+          }
+        }
+      } catch {
+        // transient error, ignore and keep trying
+      }
+    }, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [activeJobId, qc])
+
+  // Clean up ?import= param from URL so back navigation doesn't reopen dialog
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('import')) {
+      const p = new URLSearchParams(location.search)
+      p.delete('import')
+      navigate({ search: p.toString() }, { replace: true })
+    }
+  }, [navigate])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (debouncedQ !== filter.q) setFilter({ ...filter, q: debouncedQ }) }, [debouncedQ])
   // The address changed by itself (Back, a link): show its search in the box.
@@ -108,7 +142,7 @@ export default function Recipes() {
         <Chip selected={filter.prep} onClick={() => setFilter({ ...filter, prep: !filter.prep })}>🫙 Prepped</Chip>
         {facets.data?.categories.map((c) => (
           <Chip key={c} selected={filter.categories.includes(c)} disabled={facets.data?.counts?.category[c] === 0 && !filter.categories.includes(c)}
-            onClick={() => setFilter({ ...filter, categories: toggle(filter.categories, c) })}>{c}</Chip>
+            onClick={() => setFilter({ ...filter, categories: filter.categories.length === 1 && filter.categories[0] === c ? [] : [c] })}>{c}</Chip>
         ))}
       </div>
 
@@ -121,7 +155,7 @@ export default function Recipes() {
             action={<Button onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>} />
         : n === 0 && !filter.q
         ? <Empty emoji="🍲" title="Your recipe book is empty"
-            body="Import a recipe from a YouTube video, an Instagram Reel, a web page or a PDF, or write your own."
+            body="Import a recipe from a YouTube video, an Instagram post or Reel, a web page or a PDF, or write your own."
             action={<div className="flex flex-wrap justify-center gap-2">
               <Button onClick={() => setImporting(true)}>🔗 Import</Button>
               <Button variant="ghost" onClick={() => navigate('/recipes/new')}>＋ New recipe</Button>
@@ -153,7 +187,13 @@ export default function Recipes() {
         ))}
       </div>
 
-      {importing && <ImportDialog initial={new URLSearchParams(location.search).get('import') ?? ''} onClose={() => setImporting(false)} />}
+      {importing && (
+        <ImportDialog
+          initial={new URLSearchParams(location.search).get('import') ?? ''}
+          onClose={() => setImporting(false)}
+          onJobStarted={(id) => setActiveJobId(id || null)}
+        />
+      )}
       {panel && <FilterPanel initial={filter} onClose={() => setPanel(false)} onApply={(f) => { setFilter({ ...f, q: filter.q }); setPanel(false) }} />}
     </div>
   )
@@ -194,7 +234,7 @@ function FilterPanel({ initial, onClose, onApply }: { initial: RecipeFilter; onC
             <Group title="Meal" hint={MODE_HINT.any}>{data.categories.map((c) =>
               option(c, c, f.categories.includes(c), counts?.category[c] ?? 0, () => setF({ ...f, categories: toggle(f.categories, c) })))}</Group>
           )}
-          <Group title="Ready in" hint={MODE_HINT.one}>
+          <Group title="Time" hint={MODE_HINT.one}>
             {(Object.keys(TIME_RANGES) as (keyof typeof TIME_RANGES)[]).map((k) =>
               option(k, TIME_RANGES[k], f.time === k, counts?.time[k], () => setF({ ...f, time: f.time === k ? null : k })))}
           </Group>
@@ -234,52 +274,109 @@ function Group({ title, hint, children }: { title: string; hint?: string; childr
 }
 
 // The server says what it's doing in job.message; these are for when it hasn't yet.
-const STEPS: [string, string][] = [['queued', 'Waiting its turn'], ['fetching', 'Opening the link'],
-  ['reading', 'Writing the recipe'], ['saving', 'Working out calories']]
+const STEPS: [string, string][] = [
+  ['queued', 'Waiting its turn'],
+  ['fetching', 'Opening the link'],
+  ['reading', 'Writing the recipe'],
+  ['saving', 'Working out calories'],
+]
+const STEP_PERCENT: Record<string, number> = {
+  queued: 15,
+  fetching: 35,
+  reading: 65,
+  saving: 85,
+  done: 100,
+}
 const FILES = '.pdf,image/*,.yaml,.yml,.json,.txt,.md'
 
-/** Import from a recipe page, a video (YouTube, Shorts, Reels) or a file (PDF, photo, YAML/JSON/text);
+/** Import from a recipe page, a video (YouTube, Shorts, Reels), an Instagram post or a file (PDF, photo, YAML/JSON/text);
  *  opens the recipe when it's ready. */
-function ImportDialog({ initial, onClose }: { initial: string; onClose: () => void }) {
+function ImportDialog({ initial, onClose, onJobStarted }: { initial: string; onClose: () => void; onJobStarted?: (id: number) => void }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [url, setUrl] = useState(initial)
   const [job, setJob] = useState<ImportJob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
-  const running = job != null && job.status !== 'done' && job.status !== 'failed'
+  const isDone = job?.status === 'done'
+  const isFailed = job?.status === 'failed'
+  const running = job != null && !isDone && !isFailed
 
   const start = async (from: string | File) => {
     setError(null)
     try {
       let j = typeof from === 'string' ? await api.startImport(from) : await api.importFile(from)
       setJob(j)
+      onJobStarted?.(j.id)
+      let consecutiveFails = 0
       while (j.status !== 'done' && j.status !== 'failed') {
         await new Promise((r) => setTimeout(r, 1500))
-        j = await api.importJob(j.id)
-        setJob(j)
+        try {
+          j = await api.importJob(j.id)
+          setJob(j)
+          consecutiveFails = 0
+        } catch (pollErr) {
+          consecutiveFails++
+          // Tolerate up to 4 transient network hiccups before aborting
+          if (consecutiveFails >= 4) {
+            throw pollErr
+          }
+        }
       }
       if (j.status === 'done' && j.recipe_id) {
+        setJob(j)
         qc.invalidateQueries({ queryKey: ['recipes'] })
         qc.invalidateQueries({ queryKey: ['catalog'] })
+        onJobStarted?.(0)
+        // Brief pause so the user sees 100% progress and success state
+        await new Promise((r) => setTimeout(r, 600))
+        onClose()
         navigate(`/recipes/${j.recipe_id}`)
-      } else setError(j.message)
-    } catch (e) { setError(String(e).replace(/^Error: (POST \/import: )?\d+ /, '').replace(/^\{"detail":"(.*)"\}$/, '$1')); setJob(null) }
+      } else {
+        setError(j.message || 'Import failed.')
+      }
+    } catch (e) {
+      setError(String(e).replace(/^Error: (POST \/import: )?\d+ /, '').replace(/^\{"detail":"(.*)"\}$/, '$1'))
+      setJob(null)
+    }
   }
-  const step = Math.max(0, STEPS.findIndex(([s]) => s === job?.status))
+
+  const percent = job?.status ? (STEP_PERCENT[job.status] ?? 20) : 0
+  const message = isDone
+    ? (job?.message ? `Ready: ${job.message}` : 'Recipe imported! Opening…')
+    : (job?.message || STEPS.find(([s]) => s === job?.status)?.[1] || 'Importing') + '…'
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={() => !running && onClose()}>
-      <div className={`rise w-full max-w-lg rounded-3xl bg-cream p-6 shadow-2xl ${over ? 'ring-4 ring-ember-bright/60' : ''}`} onClick={(e) => e.stopPropagation()}
-        onDragOver={(e) => { if (!running) { e.preventDefault(); setOver(true) } }} onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f && !running) start(f) }}>
-        <h2 className="font-display text-3xl font-extrabold">Import a recipe</h2>
-        <p className="mt-1 text-sm text-stone-500">From a recipe website, a YouTube video, a Short or an Instagram Reel, or a file: a PDF, a photo of a recipe, or a YAML/JSON recipe. Cauldron reads it, keeps the amounts and macros it gives, and writes the recipe.</p>
-        {!running ? (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className={`rise relative w-full max-w-lg rounded-3xl bg-cream p-6 shadow-2xl ${over ? 'ring-4 ring-ember-bright/60' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        onDragOver={(e) => { if (!running) { e.preventDefault(); setOver(true) } }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f && !running) start(f) }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-5 top-5 grid h-8 w-8 place-items-center rounded-full text-stone-400 hover:bg-stone-200/60 hover:text-ink transition"
+        >
+          ✕
+        </button>
+        <h2 className="font-display text-3xl font-extrabold pr-8">Import a recipe</h2>
+        <p className="mt-1 text-sm text-stone-500">
+          From a recipe website, a YouTube video, a Short or an Instagram post or Reel, or a file: a PDF, a photo of a recipe, or a YAML/JSON recipe. Cauldron reads it, keeps the amounts and macros it gives, and writes the recipe.
+        </p>
+        {!running && !isDone ? (
           <>
             <form className="mt-5 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (url.trim()) start(url.trim()) }}>
-              <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link"
-                className="min-w-0 flex-1 rounded-full bg-paper px-5 py-3 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50" />
+              <input
+                autoFocus
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste a link"
+                className="min-w-0 flex-1 rounded-full bg-paper px-5 py-3 outline-none ring-1 ring-stone-200 focus:ring-2 focus:ring-ember-bright/50"
+              />
               <Button variant="accent" type="submit" disabled={!url.trim()}>Import</Button>
             </form>
             <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-stone-300 px-4 py-4 text-sm font-semibold text-stone-500 hover:border-stone-400 hover:text-ink">
@@ -289,11 +386,28 @@ function ImportDialog({ initial, onClose }: { initial: string; onClose: () => vo
           </>
         ) : (
           <div className="mt-5 rounded-2xl bg-paper p-5 ring-1 ring-stone-200">
-            <p className="flex items-center gap-3 font-semibold"><span className="h-4 w-4 animate-spin rounded-full border-2 border-ember-bright border-t-transparent" />{job?.message || STEPS[step][1]}…</p>
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-stone-200">
-              <div className="h-full rounded-full bg-ember-bright transition-[width] duration-500" style={{ width: `${((step + 1) / (STEPS.length + 1)) * 100}%` }} />
+            <div className="flex items-center gap-3 font-semibold">
+              {isDone ? (
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-600 text-xs font-bold text-white">✓</span>
+              ) : (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-ember-bright border-t-transparent" />
+              )}
+              <span className="truncate">{message}</span>
             </div>
-            <p className="mt-3 text-xs text-stone-500">This takes about a minute. You can close this page; it keeps going and shows up in My recipes.</p>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-stone-200">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${isDone ? 'bg-emerald-600' : 'bg-ember-bright'}`}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3 text-xs text-stone-500">
+              <span>{isDone ? 'Opening recipe now…' : 'This takes about a minute. You can close this; it keeps going in My recipes.'}</span>
+              {!isDone && (
+                <button type="button" onClick={onClose} className="shrink-0 font-semibold text-ember hover:underline">
+                  Close and wait
+                </button>
+              )}
+            </div>
           </div>
         )}
         {error && <p className="mt-4 text-sm font-semibold text-danger">{error}</p>}
